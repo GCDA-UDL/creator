@@ -220,6 +220,15 @@ export default defineComponent({
         <span>Statistics</span>
       </button>
 
+      <!-- Datapath Tab (UdL) -->
+      <button
+        :class="['tab', { active: current_reg_type === 'datapath' }]"
+        @click="change_data_view('datapath')"
+      >
+        <font-awesome-icon :icon="['fas', 'diagram-project']" />
+        <span>Datapath</span>
+      </button>
+
       <!-- Arduino Tab -->
       <button
         v-if="architecture_name.includes('RV32') && isCreatinoUp"

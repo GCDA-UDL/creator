@@ -34,6 +34,7 @@ import Terminal from "./simulator/Terminal.vue";
 import Stats from "./simulator/Stats.vue";
 import Flash from "./simulator/Flash.vue";
 import ArduinoTerminal from "./simulator/ArduinoTerminal.vue";
+import DatapathView from "./simulator/DatapathView.vue";
 
 export default defineComponent({
   props: {
@@ -76,7 +77,8 @@ export default defineComponent({
     Stats,
     Flash,
     Terminal,
-    ArduinoTerminal
+    ArduinoTerminal,
+    DatapathView
     // App
   },
 
@@ -198,6 +200,13 @@ export default defineComponent({
                   :enter="enter"
                   ref="arduinoTerminal"
                 />
+
+                <!-- Datapath view (UdL) -->
+                <DatapathView
+                  v-if="data_mode === 'datapath'"
+                  :dark="dark"
+                  ref="datapath"
+                />
               </div>
             </div>
           </b-col>
@@ -275,6 +284,7 @@ export default defineComponent({
 .execution-data-content :deep(.register-file-container),
 .execution-data-content :deep(.memory-container),
 .execution-data-content :deep(.stats-container),
+.execution-data-content :deep(.datapath-container),
 .execution-data-content :deep(.terminal-container) {
   height: 100%;
   max-height: 100%;

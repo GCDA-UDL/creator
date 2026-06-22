@@ -49,6 +49,8 @@ import { compileInstruction } from "./instructionCompiler.mts";
 import { coreEvents } from "../events.mts";
 import { clearAllRegisterGlows } from "../register/registerGlowState.mjs";
 import { architecture } from "../core.mjs";
+// UdL extension: visual datapath trace (additive; never affects execution)
+import { buildDatapathTrace, emitDatapathTrace } from "../trace/datapathTrace.mts";
 
 const instructionCache = new Map();
 const compiledFunctions = new Map();
@@ -348,6 +350,20 @@ function processCurrentInstruction(enableCache = true) {
 
     // 6. Update execution statistics
     updateStats(instruction.type, instruction.clk_cycles);
+
+    // 6b. UdL: emit a visual datapath trace (additive; must never break execution)
+    try {
+        emitDatapathTrace(
+            buildDatapathTrace({
+                pc: pc_address,
+                instructionHex: machineCode,
+                asm,
+                type: instruction.type,
+            }),
+        );
+    } catch {
+        /* intentionally ignored: the datapath view is best-effort */
+    }
 
     // Return instruction data for CLI display
     return {
