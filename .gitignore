@@ -38,3 +38,6 @@ vscode-extension/.vscode/*
 
 /creator-cli
 cli/node_modules
+
+# UdL dev: este proyecto usa bun; ignorar lockfile npm accidental
+package-lock.json
