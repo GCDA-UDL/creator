@@ -1,0 +1,174 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://creatorsim.github.io/schema/datapath.json",
+    "title": "CREATOR datapath spec",
+    "description": "Optional `datapath:` block in an architecture YAML. Describes how to draw the architecture's datapath; the UI renders it and binds the live execution trace (active stages, operand values, MUX source, branch path, optional units). If absent, CREATOR uses a built-in drawing for known ISAs (riscv, mips) or the generic Blocks view.",
+    "type": "object",
+    "properties": {
+        "id": { "type": "string" },
+        "caption": { "type": "string", "description": "Caption shown under the diagram." },
+        "viewBox": { "type": "string", "default": "0 0 940 430", "description": "SVG viewBox." },
+        "headers": {
+            "type": "array",
+            "description": "Stage column headers.",
+            "items": {
+                "type": "object",
+                "properties": { "label": { "type": "string" }, "x": { "type": "number" } },
+                "required": ["label", "x"]
+            }
+        },
+        "separators": { "type": "array", "items": { "type": "number" }, "description": "X positions of dashed stage separators." },
+        "pipeRegs": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": { "x": { "type": "number" }, "label": { "type": "string" } },
+                "required": ["x", "label"]
+            }
+        },
+        "notes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": { "text": { "type": "string" }, "x": { "type": "number" }, "y": { "type": "number" } },
+                "required": ["text", "x", "y"]
+            }
+        },
+        "wires": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "points": { "type": "string", "description": "SVG polyline points, e.g. \"58,210 78,210\"." },
+                    "stage": { "$ref": "#/$defs/stage" },
+                    "dashed": { "type": "boolean" },
+                    "selImm": { "type": "boolean", "description": "Highlight when the ALU takes the immediate (ALUSrc=1)." }
+                },
+                "required": ["points"]
+            }
+        },
+        "blocks": {
+            "type": "array",
+            "description": "Functional blocks (PC, register file, ALU, MUX, memory…).",
+            "items": { "$ref": "#/$defs/block" }
+        },
+        "help": {
+            "type": "object",
+            "description": "Student-mode explanations keyed by element id.",
+            "additionalProperties": { "$ref": "#/$defs/help" }
+        },
+        "extraQmarks": {
+            "type": "array",
+            "description": "Question marks not tied to a drawn block (e.g. pipeline registers).",
+            "items": {
+                "type": "object",
+                "properties": { "id": { "type": "string" }, "x": { "type": "number" }, "y": { "type": "number" } },
+                "required": ["id", "x", "y"]
+            }
+        },
+        "values": {
+            "type": "array",
+            "description": "Operand value anchors (renders \"role: reg = value\" or the immediate).",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "kind": { "enum": ["operand", "imm"] },
+                    "role": { "type": "string", "description": "Operand role name as decoded (rs1, rs2, rd, rs, rt, imm…)." },
+                    "x": { "type": "number" },
+                    "y": { "type": "number" }
+                },
+                "required": ["kind", "role", "x", "y"]
+            }
+        },
+        "destRoles": { "type": "array", "items": { "type": "string" }, "description": "Destination roles tried in order (RISC-V: [\"rd\"]; MIPS: [\"rd\",\"rt\"])." },
+        "srcRegRole": { "type": "string", "description": "Second ALU source register role for the MUX-source label (rs2 / rt)." },
+        "wb": { "$ref": "#/$defs/point", "description": "Write-back value anchor." },
+        "aluResult": { "$ref": "#/$defs/point", "description": "ALU-result value anchor." },
+        "muxSrc": { "$ref": "#/$defs/point", "description": "ALU-source (imm vs srcRegRole) label anchor." },
+        "branchPath": {
+            "type": "object",
+            "properties": { "points": { "type": "string" }, "x": { "type": "number" }, "y": { "type": "number" } },
+            "required": ["points", "x", "y"]
+        },
+        "units": { "type": "array", "items": { "$ref": "#/$defs/unit" } }
+    },
+    "$defs": {
+        "stage": { "enum": ["IF", "ID", "EX", "MEM", "WB"] },
+        "point": {
+            "type": "object",
+            "properties": { "x": { "type": "number" }, "y": { "type": "number" } },
+            "required": ["x", "y"]
+        },
+        "color": { "enum": ["green", "greenlt", "red", "blue", "cyan", "yellow", "gray", "white"] },
+        "geom": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "kind": { "const": "rect" },
+                        "x": { "type": "number" }, "y": { "type": "number" },
+                        "w": { "type": "number" }, "h": { "type": "number" }, "rx": { "type": "number" }
+                    },
+                    "required": ["kind", "x", "y", "w", "h"]
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "kind": { "const": "ellipse" },
+                        "cx": { "type": "number" }, "cy": { "type": "number" },
+                        "rx": { "type": "number" }, "ry": { "type": "number" }
+                    },
+                    "required": ["kind", "cx", "cy", "rx", "ry"]
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "kind": { "const": "polygon" },
+                        "points": { "type": "string" }
+                    },
+                    "required": ["kind", "points"]
+                }
+            ]
+        },
+        "block": {
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "stage": { "$ref": "#/$defs/stage" },
+                "geom": { "$ref": "#/$defs/geom" },
+                "label": { "type": "string" },
+                "labelPos": { "$ref": "#/$defs/point" },
+                "color": { "$ref": "#/$defs/color" },
+                "dark": { "type": "boolean" },
+                "small": { "type": "boolean" },
+                "qmark": { "$ref": "#/$defs/point" }
+            },
+            "required": ["id", "geom", "label", "labelPos"]
+        },
+        "help": {
+            "type": "object",
+            "properties": {
+                "title": { "type": "string" },
+                "desc": { "type": "string" },
+                "look": { "type": "string" }
+            },
+            "required": ["title", "desc", "look"]
+        },
+        "unit": {
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "extReq": { "enum": ["M", "FP"] },
+                "unit": { "enum": ["mul", "fpu"] },
+                "fillClass": { "enum": ["mul", "fpu"] },
+                "rect": { "$ref": "#/$defs/geom" },
+                "label": { "type": "string" },
+                "labelPos": { "$ref": "#/$defs/point" },
+                "ulbl": { "type": "string" },
+                "ulblPos": { "$ref": "#/$defs/point" },
+                "qmark": { "$ref": "#/$defs/point" }
+            },
+            "required": ["id", "extReq", "unit", "fillClass", "rect", "label", "labelPos", "ulbl", "ulblPos"]
+        }
+    }
+}

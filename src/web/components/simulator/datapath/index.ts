@@ -22,9 +22,39 @@ export function builtinSpecForPlugin(plugin?: string | null): DatapathSpec | nul
 }
 
 /**
+ * Fills a (possibly partial / author-supplied) spec with safe defaults so a
+ * hand-written YAML `datapath:` block renders without crashing the view.
+ */
+export function normalizeSpec(s: Partial<DatapathSpec>): DatapathSpec {
+    return {
+        id: s.id ?? "custom",
+        plugins: s.plugins ?? [],
+        caption: s.caption ?? "Datapath",
+        viewBox: s.viewBox ?? "0 0 940 430",
+        headers: s.headers ?? [],
+        separators: s.separators ?? [],
+        pipeRegs: s.pipeRegs ?? [],
+        notes: s.notes ?? [],
+        wires: s.wires ?? [],
+        blocks: s.blocks ?? [],
+        help: s.help ?? {},
+        extraQmarks: s.extraQmarks ?? [],
+        values: s.values ?? [],
+        destRoles: s.destRoles && s.destRoles.length ? s.destRoles : ["rd"],
+        srcRegRole: s.srcRegRole ?? "rs2",
+        wb: s.wb ?? { x: 0, y: 0 },
+        aluResult: s.aluResult,
+        muxSrc: s.muxSrc,
+        branchPath: s.branchPath,
+        units: s.units,
+    };
+}
+
+/**
  * Resolves the datapath spec for the loaded architecture. A YAML-authored custom
  * spec wins; it may be partial and is merged onto the plugin baseline so an author
- * can override just a few fields (e.g. labels) and inherit the rest.
+ * can override just a few fields (e.g. labels) and inherit the rest. The custom
+ * result is normalised so missing fields never break the renderer.
  */
 export function resolveDatapathSpec(
     plugin?: string | null,
@@ -32,9 +62,7 @@ export function resolveDatapathSpec(
 ): DatapathSpec | null {
     if (custom && Array.isArray(custom.blocks) && custom.blocks.length > 0) {
         const base = builtinSpecForPlugin(plugin);
-        return base
-            ? ({ ...base, ...custom } as DatapathSpec)
-            : (custom as DatapathSpec);
+        return normalizeSpec(base ? { ...base, ...custom } : custom);
     }
     return builtinSpecForPlugin(plugin);
 }
