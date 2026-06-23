@@ -102,7 +102,7 @@ export default defineComponent({
         <!-- Empty state -->
         <div v-if="!trace" class="dp-empty">
             <font-awesome-icon :icon="['fas', 'diagram-project']" class="dp-empty-icon" />
-            <p>Executa una instrucció (pas a pas) per veure el datapath RISC-V.</p>
+            <p>Run an instruction (step) to see the RISC-V datapath.</p>
         </div>
 
         <div v-else class="dp-content">
@@ -113,11 +113,11 @@ export default defineComponent({
                     <div class="summary-value">{{ trace.pc }}</div>
                 </div>
                 <div class="summary-card">
-                    <div class="summary-label">Instrucció</div>
+                    <div class="summary-label">Instruction</div>
                     <div class="summary-value asm">{{ trace.asm }}</div>
                 </div>
                 <div class="summary-card">
-                    <div class="summary-label">Codi màquina</div>
+                    <div class="summary-label">Machine code</div>
                     <div class="summary-value">0x{{ trace.instructionHex }}</div>
                 </div>
                 <div class="summary-card">
@@ -126,10 +126,10 @@ export default defineComponent({
                 </div>
             </div>
 
-            <!-- Mode toggle: Bloques (genèric) / Esquema (SVG RV32I) -->
+            <!-- Mode toggle: Blocks (generic) / Schematic (SVG RV32I) -->
             <div class="dp-modes">
-                <button class="dp-mode-btn" :class="{ active: mode === 'blocks' }" @click="mode = 'blocks'">Bloques</button>
-                <button class="dp-mode-btn" :class="{ active: mode === 'schematic' }" @click="mode = 'schematic'">Esquema</button>
+                <button class="dp-mode-btn" :class="{ active: mode === 'blocks' }" @click="mode = 'blocks'">Blocks</button>
+                <button class="dp-mode-btn" :class="{ active: mode === 'schematic' }" @click="mode = 'schematic'">Schematic</button>
             </div>
 
             <!-- Drawn schematic (RV32I, Patterson-style) -->
@@ -159,7 +159,7 @@ export default defineComponent({
 
             <!-- Control signals -->
             <div class="dp-section">
-                <h6 class="dp-title">Senyals de control</h6>
+                <h6 class="dp-title">Control signals</h6>
                 <div class="dp-signals">
                     <span
                         v-for="(v, k) in signals"
@@ -174,7 +174,7 @@ export default defineComponent({
 
             <!-- Micro-operations -->
             <div class="dp-section">
-                <h6 class="dp-title">Microoperacions (RTL)</h6>
+                <h6 class="dp-title">Micro-operations (RTL)</h6>
                 <div class="dp-microops">
                     <div
                         v-for="(m, i) in trace.microops"

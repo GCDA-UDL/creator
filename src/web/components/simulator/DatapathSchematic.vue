@@ -112,7 +112,7 @@ export default defineComponent({
         </svg>
 
         <p class="dp-note">
-            Esquema RV32I — s'il·lumina l'etapa per on passa la instrucció actual.
+            RV32I datapath — the stage the current instruction goes through is highlighted.
             <span v-if="trace">({{ trace.asm }})</span>
         </p>
     </div>
