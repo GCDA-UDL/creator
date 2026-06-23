@@ -34,6 +34,30 @@ const DEFAULTS: DpSettings = {
 };
 const LS_KEY = "creator-dp-schematic-settings";
 
+/** Student-mode explanations for each datapath element. */
+const HELP: Record<string, { title: string; desc: string; look: string }> = {
+    pc: { title: "PC — Program Counter", desc: "Holds the address of the instruction being executed.", look: "It increases by 4 each step (word size), or jumps to a target on branches/jumps." },
+    imem: { title: "Instruction Memory", desc: "Stores the program. The PC indexes it to fetch the instruction word in the IF stage.", look: "The 'Instruction' field at the top shows the fetched instruction." },
+    add: { title: "Adder (Next PC)", desc: "Computes PC + 4 (next sequential instruction) and branch/jump targets.", look: "Active in every fetch; the branch target path is used when a branch is taken." },
+    regfile: { title: "Register File (x0–x31)", desc: "Reads source registers rs1/rs2 in ID and writes the destination rd in WB.", look: "rs1/rs2 feed the ALU; rd is written back at the end (WB)." },
+    signext: { title: "Sign Extend", desc: "Extends the instruction's immediate to 32 bits (I, S, B, U, J formats).", look: "Used when ALUSrc = 1 (the immediate goes into the ALU instead of rs2)." },
+    muxex: { title: "ALU source MUX", desc: "Selects the ALU's second operand: rs2 (R-type) or the immediate (I/S/U).", look: "Controlled by ALUSrc — the highlighted label shows which one is chosen." },
+    alu: { title: "ALU", desc: "Arithmetic-Logic Unit: add/sub/and/or/shift… or the effective address for load/store.", look: "Its result goes to Write-Back, or to Data Memory for load/store." },
+    zero: { title: "ZERO? (branch test)", desc: "Comparison flag used to decide if a conditional branch is taken.", look: "Relevant for B-type instructions (beq, bne, …)." },
+    datamem: { title: "Data Memory", desc: "Main data memory. Loads read it (MemRead); stores write it (MemWrite), in the MEM stage.", look: "Only active for load/store instructions." },
+    muxmem: { title: "Next-PC MUX", desc: "Chooses the next PC: PC + 4 or the branch/jump target.", look: "Switches to the target when a branch is taken." },
+    muxwb: { title: "Write-Back MUX", desc: "Chooses what is written to rd: the ALU result or the value loaded from memory (MemToReg).", look: "For loads it picks memory data; otherwise the ALU result." },
+    pipereg: { title: "Stage registers (IF/ID … MEM/WB)", desc: "Boundaries between the five stages (Fetch, Decode, Execute, Memory, Write-Back).", look: "In this functional view they delimit the phases the instruction goes through." },
+};
+
+/** Generic, university-neutral appearance presets. */
+const PRESETS: Record<string, Partial<DpSettings>> = {
+    Classic: { scheme: "classic", valColor: "#4fc3f7", haloColor: "#0b1020", haloWidth: 3.5, activeColor: "#ffb300", dimOpacity: 0.4 },
+    "High contrast": { scheme: "classic", valColor: "#ffffff", haloColor: "#000000", haloWidth: 4.5, activeColor: "#ffd400", dimOpacity: 0.3 },
+    "Print (B/W)": { scheme: "neutral", valColor: "#000000", haloColor: "#ffffff", haloWidth: 4, activeColor: "#555555", dimOpacity: 0.5 },
+    "Dark neutral": { scheme: "neutral", valColor: "#7fd1ff", haloColor: "#0b1020", haloWidth: 3, activeColor: "#ff8a65", dimOpacity: 0.35 },
+};
+
 export default defineComponent({
     props: {
         trace: { type: Object as PropType<DatapathTrace | null>, default: null },
@@ -42,6 +66,10 @@ export default defineComponent({
         return {
             settings: { ...DEFAULTS } as DpSettings,
             showSettings: false,
+            studentMode: false,
+            explain: null as string | null,
+            help: HELP,
+            presets: PRESETS,
         };
     },
     mounted() {
@@ -91,6 +119,9 @@ export default defineComponent({
         act(stage: string): boolean {
             return this.stages.has(stage);
         },
+        applyPreset(name: string) {
+            this.settings = { ...this.settings, ...(PRESETS[name] ?? {}) };
+        },
         resetSettings() {
             this.settings = { ...DEFAULTS };
         },
@@ -100,15 +131,33 @@ export default defineComponent({
 
 <template>
     <div class="dp-schematic">
-        <!-- Toolbar: settings gear -->
+        <!-- Toolbar: settings gear + student mode -->
         <div class="dp-toolbar">
             <button class="dp-gear" :class="{ active: showSettings }" title="Datapath display settings" @click="showSettings = !showSettings">
                 <font-awesome-icon :icon="['fas', 'gear']" /> Display
             </button>
+            <button class="dp-gear" :class="{ active: studentMode }" title="Student mode: click the ? marks to learn each part" @click="studentMode = !studentMode; explain = null">
+                <font-awesome-icon :icon="['fas', 'graduation-cap']" /> Student
+            </button>
+        </div>
+
+        <!-- Student-mode help box -->
+        <div v-if="studentMode && explain" class="dp-help">
+            <button class="dp-help-x" title="Close" @click="explain = null">×</button>
+            <strong>{{ help[explain].title }}</strong>
+            <p>{{ help[explain].desc }}</p>
+            <p class="dp-look">👀 {{ help[explain].look }}</p>
+        </div>
+        <div v-else-if="studentMode" class="dp-help hint">
+            Click a <span class="qbadge">?</span> on the diagram to learn what each part does, where its data comes from and what to watch.
         </div>
 
         <!-- Settings panel -->
         <div v-if="showSettings" class="dp-settings">
+            <div class="dp-set-row">
+                <label>Theme preset</label>
+                <button v-for="(p, name) in presets" :key="name" class="dp-preset" @click="applyPreset(name)">{{ name }}</button>
+            </div>
             <div class="dp-set-row">
                 <label>Label size</label>
                 <input type="range" min="9" max="26" v-model.number="settings.labelSize" />
@@ -226,6 +275,22 @@ export default defineComponent({
                 <ellipse class="blk gray" cx="820" cy="210" rx="20" ry="30" /><text x="820" y="214" class="bt sm">MUX</text>
                 <text v-if="settings.showValues" x="852" y="360" class="note val">{{ op.rd ? 'rd: ' + op.rd : 'WB Data' }}</text>
             </g>
+
+            <!-- Student-mode question marks (click for explanation) -->
+            <g v-if="studentMode" class="dp-qmarks">
+                <g class="qmark" @click="explain = 'add'"><circle cx="100" cy="64" r="9" /><text x="100" y="68">?</text></g>
+                <g class="qmark" @click="explain = 'pc'"><circle cx="64" cy="186" r="9" /><text x="64" y="190">?</text></g>
+                <g class="qmark" @click="explain = 'imem'"><circle cx="150" cy="174" r="9" /><text x="150" y="178">?</text></g>
+                <g class="qmark" @click="explain = 'pipereg'"><circle cx="190" cy="46" r="9" /><text x="190" y="50">?</text></g>
+                <g class="qmark" @click="explain = 'regfile'"><circle cx="322" cy="131" r="9" /><text x="322" y="135">?</text></g>
+                <g class="qmark" @click="explain = 'signext'"><circle cx="336" cy="312" r="9" /><text x="336" y="316">?</text></g>
+                <g class="qmark" @click="explain = 'muxex'"><circle cx="448" cy="174" r="9" /><text x="448" y="178">?</text></g>
+                <g class="qmark" @click="explain = 'alu'"><circle cx="544" cy="178" r="9" /><text x="544" y="182">?</text></g>
+                <g class="qmark" @click="explain = 'zero'"><circle cx="520" cy="118" r="9" /><text x="520" y="122">?</text></g>
+                <g class="qmark" @click="explain = 'datamem'"><circle cx="716" cy="172" r="9" /><text x="716" y="176">?</text></g>
+                <g class="qmark" @click="explain = 'muxmem'"><circle cx="722" cy="56" r="9" /><text x="722" y="60">?</text></g>
+                <g class="qmark" @click="explain = 'muxwb'"><circle cx="840" cy="186" r="9" /><text x="840" y="190">?</text></g>
+            </g>
         </svg>
 
         <p class="dp-note-cap">
@@ -274,6 +339,27 @@ export default defineComponent({
     border-radius: 4px; padding: 2px 10px; cursor: pointer; font-weight: 600;
 }
 .dp-reset:hover { background: rgba(var(--bs-primary-rgb), 0.12); }
+.dp-preset {
+    border: 1px solid rgba(var(--bs-secondary-rgb), 0.4);
+    background: rgba(var(--bs-secondary-rgb), 0.1);
+    color: rgba(var(--bs-body-color-rgb), 0.9);
+    border-radius: 4px; padding: 2px 9px; cursor: pointer; font-size: 0.72rem; font-weight: 600;
+}
+.dp-preset:hover { background: rgba(var(--bs-primary-rgb), 0.15); color: rgba(var(--bs-primary-rgb), 1); }
+
+/* Student mode */
+.dp-help { position: relative; padding: 8px 28px 8px 10px; border-radius: 8px; font-size: 0.8rem; background: rgba(var(--bs-primary-rgb), 0.1); border: 1px solid rgba(var(--bs-primary-rgb), 0.35); }
+.dp-help.hint { background: rgba(var(--bs-secondary-rgb), 0.1); border-color: rgba(var(--bs-secondary-rgb), 0.3); color: rgba(var(--bs-body-color-rgb), 0.8); }
+.dp-help strong { color: rgba(var(--bs-primary-rgb), 1); }
+.dp-help p { margin: 4px 0 0; }
+.dp-help .dp-look { color: rgba(var(--bs-body-color-rgb), 0.75); font-style: italic; }
+.dp-help-x { position: absolute; top: 3px; right: 6px; border: none; background: transparent; font-size: 1.1rem; line-height: 1; cursor: pointer; color: rgba(var(--bs-body-color-rgb), 0.6); }
+.qbadge { display: inline-block; width: 16px; height: 16px; line-height: 16px; text-align: center; border-radius: 50%; background: var(--dp-active-color, #ffb300); color: #000; font-weight: 800; font-size: 0.7rem; }
+
+.dp-qmarks .qmark { cursor: pointer; }
+.dp-qmarks circle { fill: var(--dp-active-color, #ffb300); stroke: #000; stroke-width: 0.6; }
+.dp-qmarks text { font-size: 12px; font-weight: 800; text-anchor: middle; fill: #000; pointer-events: none; }
+.dp-qmarks .qmark:hover circle { fill: #fff; }
 
 .dp-svg {
     width: 100%; height: auto; max-height: 62vh;
