@@ -66,6 +66,10 @@ export interface DatapathTrace {
     signals?: Record<string, number | string>;
     /** Named operands by role for display, e.g. { rd: "x14", rs1: "x5", imm: "10" }. */
     operands?: Record<string, string>;
+    /** Execution unit the instruction uses (drives which EX block lights up). */
+    unit?: "alu" | "mul" | "fpu";
+    /** ISA extensions available in the loaded architecture (I, M, F, D, …). */
+    extensions?: string[];
 }
 
 /** Event name emitted on the shared `coreEvents` bus for each instruction. */
@@ -125,6 +129,16 @@ export interface TraceInput {
     exception?: string;
     /** Decoded named fields from the engine (name/type/value). */
     fields?: { name?: string; type?: string; value?: unknown }[];
+    /** ISA extensions available in the loaded architecture (I, M, F, D, …). */
+    extensions?: string[];
+}
+
+/** Derives which execution unit an instruction exercises (ALU / multiplier / FPU). */
+function unitFor(type: string, asm: string): "alu" | "mul" | "fpu" {
+    if (type.includes("floating point")) return "fpu";
+    const mnemonic = asm.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+    if (/^(mul|mulh|mulhsu|mulhu|div|divu|rem|remu)/.test(mnemonic)) return "mul";
+    return "alu";
 }
 
 const toHex = (v: bigint | string): string =>
@@ -187,6 +201,8 @@ export function buildDatapathTrace(input: TraceInput): DatapathTrace {
         microops,
         signals,
         operands,
+        unit: unitFor(input.type, input.asm),
+        extensions: input.extensions,
         branchTaken: input.branchTaken,
         exception: input.exception,
     };

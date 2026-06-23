@@ -48,6 +48,8 @@ const HELP: Record<string, { title: string; desc: string; look: string }> = {
     muxmem: { title: "Next-PC MUX", desc: "Chooses the next PC: PC + 4 or the branch/jump target.", look: "Switches to the target when a branch is taken." },
     muxwb: { title: "Write-Back MUX", desc: "Chooses what is written to rd: the ALU result or the value loaded from memory (MemToReg).", look: "For loads it picks memory data; otherwise the ALU result." },
     pipereg: { title: "Stage registers (IF/ID … MEM/WB)", desc: "Boundaries between the five stages (Fetch, Decode, Execute, Memory, Write-Back).", look: "In this functional view they delimit the phases the instruction goes through." },
+    mul: { title: "Multiplier (M extension)", desc: "Integer multiply/divide unit (mul, mulh, div, rem). Only present when the ISA includes the M extension.", look: "Lights up for mul/div/rem; plain RV32I has no multiplier." },
+    fpu: { title: "FPU (F / D extensions)", desc: "Floating-point unit for single- (F) and double-precision (D) arithmetic, using the f0–f31 registers.", look: "Lights up for floating-point instructions; absent in integer-only ISAs." },
 };
 
 /** Generic, university-neutral appearance presets. */
@@ -102,6 +104,15 @@ export default defineComponent({
         },
         aluSrc(): boolean {
             return Number(this.trace?.signals?.ALUSrc ?? 0) > 0;
+        },
+        unit(): string {
+            return this.trace?.unit ?? "alu";
+        },
+        hasM(): boolean {
+            return this.trace?.extensions?.includes("M") ?? false;
+        },
+        hasFP(): boolean {
+            return this.trace?.extensions?.some(e => e === "F" || e === "D") ?? false;
         },
         rootStyle(): Record<string, string> {
             const s = this.settings;
@@ -276,6 +287,18 @@ export default defineComponent({
                 <text v-if="settings.showValues" x="852" y="360" class="note val">{{ op.rd ? 'rd: ' + op.rd : 'WB Data' }}</text>
             </g>
 
+            <!-- Optional execution units, shown only if the loaded ISA has them -->
+            <g class="dp-units">
+                <g v-if="hasM" class="unit mul" :class="{ 'unit-on': unit === 'mul' }">
+                    <text x="507" y="262" class="ulbl">M ext</text>
+                    <rect x="470" y="266" width="76" height="26" rx="3" /><text x="508" y="283">MUL ×÷</text>
+                </g>
+                <g v-if="hasFP" class="unit fpu" :class="{ 'unit-on': unit === 'fpu' }">
+                    <text x="507" y="304" class="ulbl">F/D ext</text>
+                    <rect x="470" y="308" width="76" height="26" rx="3" /><text x="508" y="325">FPU</text>
+                </g>
+            </g>
+
             <!-- Student-mode question marks (click for explanation) -->
             <g v-if="studentMode" class="dp-qmarks">
                 <g class="qmark" @click="explain = 'add'"><circle cx="100" cy="64" r="9" /><text x="100" y="68">?</text></g>
@@ -290,6 +313,8 @@ export default defineComponent({
                 <g class="qmark" @click="explain = 'datamem'"><circle cx="716" cy="172" r="9" /><text x="716" y="176">?</text></g>
                 <g class="qmark" @click="explain = 'muxmem'"><circle cx="722" cy="56" r="9" /><text x="722" y="60">?</text></g>
                 <g class="qmark" @click="explain = 'muxwb'"><circle cx="840" cy="186" r="9" /><text x="840" y="190">?</text></g>
+                <g v-if="hasM" class="qmark" @click="explain = 'mul'"><circle cx="556" cy="279" r="9" /><text x="556" y="283">?</text></g>
+                <g v-if="hasFP" class="qmark" @click="explain = 'fpu'"><circle cx="556" cy="321" r="9" /><text x="556" y="325">?</text></g>
             </g>
         </svg>
 
@@ -416,6 +441,16 @@ export default defineComponent({
 .stage { opacity: var(--dp-dim-opacity, 0.4); transition: opacity 220ms ease, filter 220ms ease; }
 .stage.active { opacity: 1; filter: drop-shadow(0 0 5px var(--dp-active-color, #ffb300)); }
 .stage.active .blk { stroke: var(--dp-active-color, #ffb300); stroke-width: 2; }
+
+/* Optional execution units (M / F-D) */
+.dp-units .unit { opacity: 0.4; transition: opacity 220ms ease, filter 220ms ease; }
+.dp-units .unit.unit-on { opacity: 1; filter: drop-shadow(0 0 5px var(--dp-active-color, #ffb300)); }
+.dp-units rect { stroke: rgba(0, 0, 0, 0.35); stroke-width: 1; }
+.dp-units .mul rect { fill: #7E57C2; }
+.dp-units .fpu rect { fill: #00897B; }
+.dp-units .unit-on rect { stroke: var(--dp-active-color, #ffb300); stroke-width: 2; }
+.dp-units text { font-size: 10px; font-weight: 700; text-anchor: middle; fill: #fff; }
+.dp-units .ulbl { font-size: 8px; font-weight: 600; fill: rgba(var(--bs-body-color-rgb), 0.6); }
 
 .dp-note-cap { font-size: 0.72rem; color: rgba(var(--bs-body-color-rgb), 0.6); margin: 0; }
 

@@ -367,6 +367,9 @@ function processCurrentInstruction(enableCache = true) {
                 asm,
                 type: instruction.type,
                 fields: operands,
+                extensions: architecture.extensions
+                    ? Object.keys(architecture.extensions)
+                    : [],
             }),
         );
     } catch {
