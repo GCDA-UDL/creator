@@ -221,22 +221,22 @@ export default defineComponent({
                 <rect x="766" y="40" width="13" height="360" /><text x="772" y="416" class="lbl">MEM/WB</text>
             </g>
 
-            <!-- Representative wires -->
+            <!-- Representative wires (highlight + flow on the active stage) -->
             <g v-if="settings.showWires" class="dp-wires">
-                <polyline points="58,210 78,210" />
-                <polyline points="148,210 176,210" />
-                <polyline points="189,150 228,150" />
-                <polyline points="189,330 268,330" />
-                <polyline points="318,170 376,170" />
-                <polyline points="389,175 412,175" />
-                <polyline points="335,330 389,300 412,250" :class="{ wsel: aluSrc }" />
-                <polyline points="452,205 470,205" />
-                <polyline points="540,205 586,205" />
-                <polyline points="599,210 628,210" />
-                <polyline points="712,210 766,210" />
-                <polyline points="779,210 800,210" />
-                <polyline points="840,210 880,210 880,360 250,360 250,240" class="wb" />
-                <polyline points="58,150 40,150 40,90 60,90" />
+                <polyline points="58,210 78,210" :class="{ won: act('IF') }" />
+                <polyline points="148,210 176,210" :class="{ won: act('IF') }" />
+                <polyline points="58,150 40,150 40,90 60,90" :class="{ won: act('IF') }" />
+                <polyline points="189,150 228,150" :class="{ won: act('ID') }" />
+                <polyline points="189,330 268,330" :class="{ won: act('ID') }" />
+                <polyline points="318,170 376,170" :class="{ won: act('EX') }" />
+                <polyline points="389,175 412,175" :class="{ won: act('EX') }" />
+                <polyline points="335,330 389,300 412,250" :class="{ won: act('EX'), wsel: aluSrc }" />
+                <polyline points="452,205 470,205" :class="{ won: act('EX') }" />
+                <polyline points="540,205 586,205" :class="{ won: act('EX') }" />
+                <polyline points="599,210 628,210" :class="{ won: act('MEM') }" />
+                <polyline points="712,210 766,210" :class="{ won: act('MEM') }" />
+                <polyline points="779,210 800,210" :class="{ won: act('WB') }" />
+                <polyline points="840,210 880,210 880,360 250,360 250,240" :class="['wb', { won: act('WB') }]" />
             </g>
 
             <!-- IF stage -->
@@ -384,6 +384,16 @@ export default defineComponent({
 .dp-wires polyline { fill: none; stroke: rgba(var(--bs-body-color-rgb), 0.45); stroke-width: 1.6; }
 .dp-wires .wb { stroke-dasharray: 5 3; }
 .dp-wires .wsel { stroke: var(--dp-active-color, #ffb300); stroke-width: 2.6; }
+.dp-wires .won {
+    stroke: var(--dp-active-color, #ffb300);
+    stroke-width: 2.6;
+    stroke-dasharray: 6 4;
+    animation: dpflow 0.7s linear infinite;
+}
+@keyframes dpflow { to { stroke-dashoffset: -10; } }
+@media (prefers-reduced-motion: reduce) {
+    .dp-wires .won { animation: none; }
+}
 
 .blk { stroke: rgba(0,0,0,0.35); stroke-width: 1; }
 .blk.green   { fill: #66BB6A; }
