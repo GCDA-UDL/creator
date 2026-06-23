@@ -15,6 +15,7 @@ interface DpSettings {
     haloColor: string;
     haloWidth: number;
     activeColor: string;
+    highlight: number;
     dimOpacity: number;
     scheme: "classic" | "neutral";
     showValues: boolean;
@@ -27,6 +28,7 @@ const DEFAULTS: DpSettings = {
     haloColor: "#0b1020",
     haloWidth: 3.5,
     activeColor: "#ffb300",
+    highlight: 0.5,
     dimOpacity: 0.4,
     scheme: "classic",
     showValues: true,
@@ -54,10 +56,10 @@ const HELP: Record<string, { title: string; desc: string; look: string }> = {
 
 /** Generic, university-neutral appearance presets. */
 const PRESETS: Record<string, Partial<DpSettings>> = {
-    Classic: { scheme: "classic", valColor: "#4fc3f7", haloColor: "#0b1020", haloWidth: 3.5, activeColor: "#ffb300", dimOpacity: 0.4 },
-    "High contrast": { scheme: "classic", valColor: "#ffffff", haloColor: "#000000", haloWidth: 4.5, activeColor: "#ffd400", dimOpacity: 0.3 },
-    "Print (B/W)": { scheme: "neutral", valColor: "#000000", haloColor: "#ffffff", haloWidth: 4, activeColor: "#555555", dimOpacity: 0.5 },
-    "Dark neutral": { scheme: "neutral", valColor: "#7fd1ff", haloColor: "#0b1020", haloWidth: 3, activeColor: "#ff8a65", dimOpacity: 0.35 },
+    Classic: { scheme: "classic", valColor: "#4fc3f7", haloColor: "#0b1020", haloWidth: 3.5, activeColor: "#ffb300", highlight: 0.5, dimOpacity: 0.4 },
+    "High contrast": { scheme: "classic", valColor: "#ffffff", haloColor: "#000000", haloWidth: 4.5, activeColor: "#ffd400", highlight: 0.9, dimOpacity: 0.3 },
+    "Print (B/W)": { scheme: "neutral", valColor: "#000000", haloColor: "#ffffff", haloWidth: 4, activeColor: "#555555", highlight: 0.3, dimOpacity: 0.5 },
+    "Dark neutral": { scheme: "neutral", valColor: "#7fd1ff", haloColor: "#0b1020", haloWidth: 3, activeColor: "#ff8a65", highlight: 0.45, dimOpacity: 0.35 },
 };
 
 export default defineComponent({
@@ -122,6 +124,8 @@ export default defineComponent({
                 "--dp-halo-color": s.haloColor,
                 "--dp-halo-width": s.haloWidth + "px",
                 "--dp-active-color": s.activeColor,
+                "--dp-glow": (s.highlight * 5).toFixed(2) + "px",
+                "--dp-active-stroke": (s.highlight * 2).toFixed(2) + "px",
                 "--dp-dim-opacity": String(s.dimOpacity),
             };
         },
@@ -184,6 +188,8 @@ export default defineComponent({
             <div class="dp-set-row">
                 <label>Active highlight</label>
                 <input type="color" v-model="settings.activeColor" />
+                <input type="range" min="0" max="1" step="0.05" v-model.number="settings.highlight" title="Highlight strength (glow + border)" />
+                <span class="dp-set-val">{{ Math.round(settings.highlight * 100) }}%</span>
                 <label>Dim (inactive)</label>
                 <input type="range" min="0.15" max="1" step="0.05" v-model.number="settings.dimOpacity" />
                 <span class="dp-set-val">{{ settings.dimOpacity }}</span>
@@ -439,16 +445,16 @@ export default defineComponent({
 .bt.dark { fill: #222; }
 
 .stage { opacity: var(--dp-dim-opacity, 0.4); transition: opacity 220ms ease, filter 220ms ease; }
-.stage.active { opacity: 1; filter: drop-shadow(0 0 5px var(--dp-active-color, #ffb300)); }
-.stage.active .blk { stroke: var(--dp-active-color, #ffb300); stroke-width: 2; }
+.stage.active { opacity: 1; filter: drop-shadow(0 0 var(--dp-glow, 2.5px) var(--dp-active-color, #ffb300)); }
+.stage.active .blk { stroke: var(--dp-active-color, #ffb300); stroke-width: var(--dp-active-stroke, 1px); }
 
 /* Optional execution units (M / F-D) */
 .dp-units .unit { opacity: 0.4; transition: opacity 220ms ease, filter 220ms ease; }
-.dp-units .unit.unit-on { opacity: 1; filter: drop-shadow(0 0 5px var(--dp-active-color, #ffb300)); }
+.dp-units .unit.unit-on { opacity: 1; filter: drop-shadow(0 0 var(--dp-glow, 2.5px) var(--dp-active-color, #ffb300)); }
 .dp-units rect { stroke: rgba(0, 0, 0, 0.35); stroke-width: 1; }
 .dp-units .mul rect { fill: #7E57C2; }
 .dp-units .fpu rect { fill: #00897B; }
-.dp-units .unit-on rect { stroke: var(--dp-active-color, #ffb300); stroke-width: 2; }
+.dp-units .unit-on rect { stroke: var(--dp-active-color, #ffb300); stroke-width: var(--dp-active-stroke, 1px); }
 .dp-units text { font-size: 10px; font-weight: 700; text-anchor: middle; fill: #fff; }
 .dp-units .ulbl { font-size: 8px; font-weight: 600; fill: rgba(var(--bs-body-color-rgb), 0.6); }
 
