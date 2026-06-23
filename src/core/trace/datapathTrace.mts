@@ -15,6 +15,9 @@
  */
 
 import { coreEvents } from "../events.mts";
+// Read-only access to register/PC state for runtime operand values (never mutated).
+import { REGISTERS, getPC } from "../core.mjs";
+import { crex_findReg } from "../register/registerLookup.mjs";
 
 /** Conceptual datapath stages (functional view). */
 export type Stage = "IF" | "ID" | "EX" | "MEM" | "WB";
@@ -66,6 +69,8 @@ export interface DatapathTrace {
     signals?: Record<string, number | string>;
     /** Named operands by role for display, e.g. { rd: "x14", rs1: "x5", imm: "10" }. */
     operands?: Record<string, string>;
+    /** Runtime values held by register operands, by role (post-step). */
+    operandValues?: Record<string, string>;
     /** Execution unit the instruction uses (drives which EX block lights up). */
     unit?: "alu" | "mul" | "fpu";
     /** ISA extensions available in the loaded architecture (I, M, F, D, …). */
@@ -167,6 +172,36 @@ function buildOperands(
     return out;
 }
 
+/** Reads the current value held in a register by its ISA name (read-only, never throws). */
+function regValue(lookupName: string): string | undefined {
+    try {
+        const r = crex_findReg(lookupName);
+        if (!r.match) return undefined;
+        const raw = (REGISTERS as any)[r.indexComp].registers[r.indexElem].value;
+        return raw === undefined || raw === null ? undefined : String(raw);
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Builds a { role: runtime value } map for register operands (rd/rs1/rs2…).
+ * Read post-step, so `rd` reflects the just-computed result (e.g. the ALU output).
+ */
+function buildOperandValues(
+    fields?: { name?: string; type?: string; value?: unknown }[],
+): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const f of fields ?? []) {
+        if (!f.name) continue;
+        let v: string | undefined;
+        if (f.type === "INT-Reg") v = regValue("x" + f.value);
+        else if (f.type === "SFP-Reg" || f.type === "DFP-Reg") v = regValue("f" + f.value);
+        if (v !== undefined) out[f.name] = v;
+    }
+    return out;
+}
+
 /**
  * Builds a DatapathTrace from the data available at fetch-decode-execute time.
  * Generates a default F-D-E-M-WB micro-op skeleton; per-opcode refinement can
@@ -177,8 +212,21 @@ export function buildDatapathTrace(input: TraceInput): DatapathTrace {
     const signals = signalMap[format] ?? signalMap.UNKNOWN;
     const pc = toHex(input.pc);
     const operands = buildOperands(input.fields);
+    const operandValues = buildOperandValues(input.fields);
     const rd = operands.rd ?? "rd";
     const src2 = signals.ALUSrc ? operands.imm ?? "imm" : operands.rs2 ?? "rs2";
+
+    // Infer whether a branch/jump diverted control flow (RV32: fixed 4-byte stride).
+    let branchTaken = input.branchTaken;
+    if (branchTaken === undefined && (format === "B" || format === "J")) {
+        try {
+            const pcNum =
+                typeof input.pc === "bigint" ? input.pc : BigInt(input.pc);
+            branchTaken = BigInt(getPC()) !== pcNum + 4n;
+        } catch {
+            /* leave undefined */
+        }
+    }
 
     const microops: MicroOp[] = [
         { stage: "IF", rtl: `IR ← Mem[PC]; PC ← PC + 4`, reads: [{ kind: "pc", id: "pc", value: pc }] },
@@ -201,9 +249,10 @@ export function buildDatapathTrace(input: TraceInput): DatapathTrace {
         microops,
         signals,
         operands,
+        operandValues,
         unit: unitFor(input.type, input.asm),
         extensions: input.extensions,
-        branchTaken: input.branchTaken,
+        branchTaken,
         exception: input.exception,
     };
 }

@@ -107,6 +107,12 @@ export default defineComponent({
         aluSrc(): boolean {
             return Number(this.trace?.signals?.ALUSrc ?? 0) > 0;
         },
+        val(): Record<string, string> {
+            return this.trace?.operandValues ?? {};
+        },
+        branched(): boolean {
+            return this.trace?.branchTaken === true;
+        },
         unit(): string {
             return this.trace?.unit ?? "alu";
         },
@@ -133,6 +139,12 @@ export default defineComponent({
     methods: {
         act(stage: string): boolean {
             return this.stages.has(stage);
+        },
+        valLabel(role: string): string {
+            const name = this.op[role];
+            if (!name) return role;
+            const v = this.val[role];
+            return role + ": " + name + (v !== undefined ? " = " + v : "");
         },
         applyPreset(name: string) {
             this.settings = { ...this.settings, ...(PRESETS[name] ?? {}) };
@@ -268,8 +280,8 @@ export default defineComponent({
             <g class="stage" :class="{ active: act('ID') }">
                 <rect class="blk greenlt" x="228" y="135" width="90" height="95" rx="4" /><text x="273" y="186" class="bt">Reg File</text>
                 <ellipse class="blk yellow" cx="300" cy="330" rx="34" ry="22" /><text x="300" y="334" class="bt sm dark">SignExt</text>
-                <text v-if="settings.showValues" x="196" y="146" class="note val">{{ op.rs1 ? 'rs1: ' + op.rs1 : 'rs1' }}</text>
-                <text v-if="settings.showValues" x="196" y="166" class="note val">{{ op.rs2 ? 'rs2: ' + op.rs2 : 'rs2' }}</text>
+                <text v-if="settings.showValues" x="196" y="146" class="note val">{{ valLabel('rs1') }}</text>
+                <text v-if="settings.showValues" x="196" y="166" class="note val">{{ valLabel('rs2') }}</text>
                 <text v-if="settings.showValues" x="196" y="326" class="note val">{{ op.imm != null && op.imm !== '' ? 'imm: ' + op.imm : 'imm' }}</text>
             </g>
 
@@ -278,6 +290,7 @@ export default defineComponent({
                 <ellipse class="blk gray" cx="430" cy="200" rx="20" ry="30" /><text x="430" y="204" class="bt sm">MUX</text>
                 <text v-if="settings.showValues && trace" x="430" y="252" class="note val">{{ aluSrc ? 'imm' : 'rs2' }}</text>
                 <polygon class="blk cyan" points="470,175 540,195 540,215 470,235 488,205" /><text x="500" y="209" class="bt">ALU</text>
+                <text v-if="settings.showValues && unit === 'alu' && val.rd !== undefined" x="556" y="200" class="note val">= {{ val.rd }}</text>
                 <rect class="blk white" x="470" y="120" width="46" height="26" rx="3" /><text x="493" y="137" class="bt sm dark">ZERO?</text>
             </g>
 
@@ -290,7 +303,7 @@ export default defineComponent({
             <!-- WB stage -->
             <g class="stage" :class="{ active: act('WB') }">
                 <ellipse class="blk gray" cx="820" cy="210" rx="20" ry="30" /><text x="820" y="214" class="bt sm">MUX</text>
-                <text v-if="settings.showValues" x="852" y="360" class="note val">{{ op.rd ? 'rd: ' + op.rd : 'WB Data' }}</text>
+                <text v-if="settings.showValues" x="852" y="360" class="note val">{{ op.rd ? valLabel('rd') : 'WB Data' }}</text>
             </g>
 
             <!-- Optional execution units, shown only if the loaded ISA has them -->
@@ -303,6 +316,12 @@ export default defineComponent({
                     <text x="507" y="304" class="ulbl">F/D ext</text>
                     <rect x="470" y="308" width="76" height="26" rx="3" /><text x="508" y="325">FPU</text>
                 </g>
+            </g>
+
+            <!-- Branch-taken path: next PC takes the branch/jump target -->
+            <g v-if="branched" class="dp-branch">
+                <polyline points="540,188 566,92 678,84" />
+                <text x="568" y="74" class="note val">branch taken</text>
             </g>
 
             <!-- Student-mode question marks (click for explanation) -->
@@ -423,7 +442,14 @@ export default defineComponent({
 }
 @keyframes dpflow { to { stroke-dashoffset: -10; } }
 @media (prefers-reduced-motion: reduce) {
-    .dp-wires .won { animation: none; }
+    .dp-wires .won, .dp-branch polyline { animation: none; }
+}
+.dp-branch polyline {
+    fill: none;
+    stroke: var(--dp-active-color, #ffb300);
+    stroke-width: 2.4;
+    stroke-dasharray: 6 4;
+    animation: dpflow 0.7s linear infinite;
 }
 
 .blk { stroke: rgba(0,0,0,0.35); stroke-width: 1; }
