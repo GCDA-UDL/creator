@@ -19,7 +19,7 @@ tests/
     DatapathSchematic.spec.ts
   e2e/                       # Playwright end-to-end tests
     datapath.spec.ts
-    datapath.spec.ts-snapshots/   # screenshots (committed as visual reference)
+    __screenshots__/         # screenshots captured by the e2e run (visual reference)
   arch/                      # pre-existing CREATOR architecture test utils
 ```
 

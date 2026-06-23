@@ -41,3 +41,9 @@ cli/node_modules
 
 # UdL dev: este proyecto usa bun; ignorar lockfile npm accidental
 package-lock.json
+
+# Playwright / test artifacts (committed screenshots live in tests/e2e/__screenshots__)
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
