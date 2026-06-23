@@ -31,6 +31,7 @@ import {
     DATAPATH_TRACE_EVENT,
     signalMap,
 } from "@/core/trace/datapathTrace.mts";
+import DatapathSchematic from "./DatapathSchematic.vue";
 
 interface DpBlock {
     id: string;
@@ -40,6 +41,8 @@ interface DpBlock {
 }
 
 export default defineComponent({
+    components: { DatapathSchematic },
+
     props: {
         dark: { type: Boolean, default: false },
     },
@@ -47,6 +50,7 @@ export default defineComponent({
     data() {
         return {
             trace: null as DatapathTrace | null,
+            mode: "blocks" as "blocks" | "schematic",
         };
     },
 
@@ -122,6 +126,17 @@ export default defineComponent({
                 </div>
             </div>
 
+            <!-- Mode toggle: Bloques (genèric) / Esquema (SVG RV32I) -->
+            <div class="dp-modes">
+                <button class="dp-mode-btn" :class="{ active: mode === 'blocks' }" @click="mode = 'blocks'">Bloques</button>
+                <button class="dp-mode-btn" :class="{ active: mode === 'schematic' }" @click="mode = 'schematic'">Esquema</button>
+            </div>
+
+            <!-- Drawn schematic (RV32I, Patterson-style) -->
+            <DatapathSchematic v-if="mode === 'schematic'" :trace="trace" />
+
+            <!-- Block view (generic, any architecture) -->
+            <template v-else>
             <!-- Datapath flow -->
             <div class="dp-section">
                 <h6 class="dp-title">Datapath</h6>
@@ -171,6 +186,7 @@ export default defineComponent({
                     </div>
                 </div>
             </div>
+            </template>
         </div>
     </div>
 </template>
@@ -204,6 +220,33 @@ export default defineComponent({
 .dp-empty-icon { font-size: 2.4rem; opacity: 0.5; }
 
 .dp-content { display: flex; flex-direction: column; gap: 12px; }
+
+/* Mode toggle (Bloques / Esquema) */
+.dp-modes {
+    display: inline-flex;
+    gap: 4px;
+    background-color: rgba(var(--bs-secondary-rgb), 0.12);
+    padding: 3px;
+    border-radius: 6px;
+    align-self: flex-start;
+}
+.dp-mode-btn {
+    padding: 4px 14px;
+    border: none;
+    background: transparent;
+    color: rgba(var(--bs-body-color-rgb), 0.7);
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 150ms ease;
+}
+.dp-mode-btn:hover { color: rgba(var(--bs-body-color-rgb), 1); }
+.dp-mode-btn.active {
+    background-color: rgba(var(--bs-primary-rgb), 0.15);
+    color: rgba(var(--bs-primary-rgb), 1);
+    font-weight: 700;
+}
 
 /* Summary cards (same look as Stats.vue) */
 .dp-summary {
