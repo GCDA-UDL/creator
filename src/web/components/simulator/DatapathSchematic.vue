@@ -14,6 +14,9 @@ export default defineComponent({
     props: {
         trace: { type: Object as PropType<DatapathTrace | null>, default: null },
     },
+    data() {
+        return { labelSize: 14 };
+    },
     computed: {
         stages(): Set<string> {
             const t = this.trace;
@@ -36,7 +39,18 @@ export default defineComponent({
 
 <template>
     <div class="dp-schematic">
-        <svg viewBox="0 0 940 430" preserveAspectRatio="xMidYMid meet" class="dp-svg">
+        <div class="dp-toolbar">
+            <span class="dp-tlabel">Label size</span>
+            <button class="dp-sz" @click="labelSize = Math.max(9, labelSize - 1)">A−</button>
+            <span class="dp-szval">{{ labelSize }}px</span>
+            <button class="dp-sz" @click="labelSize = Math.min(26, labelSize + 1)">A+</button>
+        </div>
+        <svg
+            viewBox="0 0 940 430"
+            preserveAspectRatio="xMidYMid meet"
+            class="dp-svg"
+            :style="{ '--dp-val-size': labelSize + 'px' }"
+        >
             <!-- Stage headers -->
             <g class="dp-headers">
                 <text x="95" y="22" class="hd">Instruction Fetch</text>
@@ -139,9 +153,37 @@ export default defineComponent({
 .lbl { font-size: 9px; text-anchor: middle; fill: rgba(var(--bs-body-color-rgb), 0.7); font-weight: 600; }
 .note { font-size: 9px; fill: rgba(var(--bs-body-color-rgb), 0.6); }
 .note.val {
+    font-size: var(--dp-val-size, 14px);
     fill: rgba(var(--bs-primary-rgb), 1);
     font-weight: 700;
     font-family: ui-monospace, "Cascadia Code", monospace;
+    /* halo for contrast over any block colour */
+    paint-order: stroke fill;
+    stroke: var(--bs-body-bg, #1e1e1e);
+    stroke-width: 3.5px;
+    stroke-linejoin: round;
+}
+
+/* Label-size toolbar */
+.dp-toolbar { display: flex; align-items: center; gap: 6px; }
+.dp-tlabel { font-size: 0.72rem; color: rgba(var(--bs-body-color-rgb), 0.7); }
+.dp-sz {
+    border: 1px solid rgba(var(--bs-secondary-rgb), 0.45);
+    background: rgba(var(--bs-secondary-rgb), 0.12);
+    color: rgba(var(--bs-body-color-rgb), 0.9);
+    border-radius: 4px;
+    padding: 1px 9px;
+    cursor: pointer;
+    font-weight: 700;
+    line-height: 1.3;
+}
+.dp-sz:hover { background: rgba(var(--bs-primary-rgb), 0.18); }
+.dp-szval {
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+    min-width: 34px;
+    text-align: center;
+    color: rgba(var(--bs-body-color-rgb), 0.85);
 }
 .dp-wires .wsel { stroke: rgba(var(--bs-primary-rgb), 1); stroke-width: 2.6; }
 .dp-sep line { stroke: rgba(var(--bs-body-color-rgb), 0.25); stroke-width: 1; stroke-dasharray: 4 4; }
