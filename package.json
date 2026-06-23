@@ -19,7 +19,10 @@
     "build:cli": "bun run wasm:cli && bun run build:cli:native",
     "type-check": "vue-tsc --build",
     "lint": "eslint",
-    "format": "prettier --write"
+    "format": "prettier --write",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@codemirror/lang-yaml": "^6.1.2",
@@ -69,12 +72,14 @@
     "@vitejs/plugin-vue": "^6.0.2",
     "@vue/eslint-config-prettier": "^10.2.0",
     "@vue/eslint-config-typescript": "^14.6.0",
+    "@vue/test-utils": "^2.4.11",
     "@vue/tsconfig": "^0.8.1",
     "@vueuse/core": "^14.0.0",
     "eslint": "^9.39.1",
     "eslint-plugin-vue": "^10.5.1",
     "globals": "^16.5.0",
     "jiti": "^2.6.1",
+    "jsdom": "^29.1.1",
     "npm-run-all2": "^8.0.4",
     "prettier": "^3.7.4",
     "prettier-plugin-vue": "^1.1.6",
@@ -87,6 +92,7 @@
     "vite-multiple-assets": "^2.2.6",
     "vite-plugin-image-optimizer": "^2.0.3",
     "vite-plugin-vue-devtools": "^8.0.5",
+    "vitest": "^4.1.9",
     "vue-router": "^4.6.3",
     "vue-tsc": "^3.1.4",
     "wasm-pack": "^0.13.1"
