@@ -149,25 +149,18 @@ function unitFor(type: string, asm: string): "alu" | "mul" | "fpu" {
 const toHex = (v: bigint | string): string =>
     typeof v === "bigint" ? "0x" + v.toString(16) : v;
 
-/** Renders a register operand with its ISA prefix (x for int, f for float). */
-function regName(type: string | undefined, value: unknown): string {
-    const v = String(value);
-    if (type === "INT-Reg") return "x" + v;
-    if (type === "SFP-Reg" || type === "DFP-Reg") return "f" + v;
-    return v;
-}
-
-/** Builds a { role: rendered } operand map (rd/rs1/rs2/imm) from decoded fields. */
+/**
+ * Builds a { role: rendered } operand map (rd/rs1/rs2/imm) from decoded fields.
+ * The engine already decodes register operands to their ISA name (e.g. "x0",
+ * "t0", "$5"), so the decoded value is shown verbatim.
+ */
 function buildOperands(
     fields?: { name?: string; type?: string; value?: unknown }[],
 ): Record<string, string> {
     const out: Record<string, string> = {};
     for (const f of fields ?? []) {
         if (!f.name) continue;
-        const isReg = ["INT-Reg", "Ctrl-Reg", "SFP-Reg", "DFP-Reg"].includes(
-            f.type ?? "",
-        );
-        out[f.name] = isReg ? regName(f.type, f.value) : String(f.value);
+        out[f.name] = String(f.value);
     }
     return out;
 }
@@ -194,9 +187,11 @@ function buildOperandValues(
     const out: Record<string, string> = {};
     for (const f of fields ?? []) {
         if (!f.name) continue;
-        let v: string | undefined;
-        if (f.type === "INT-Reg") v = regValue("x" + f.value);
-        else if (f.type === "SFP-Reg" || f.type === "DFP-Reg") v = regValue("f" + f.value);
+        if (!["INT-Reg", "Ctrl-Reg", "SFP-Reg", "DFP-Reg"].includes(f.type ?? "")) {
+            continue;
+        }
+        // The decoded value is already the register name (e.g. "x0", "t0").
+        const v = regValue(String(f.value));
         if (v !== undefined) out[f.name] = v;
     }
     return out;

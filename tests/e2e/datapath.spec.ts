@@ -92,4 +92,32 @@ test.describe("Datapath view (per-architecture)", () => {
             .locator(".dp-schematic")
             .screenshot({ path: "tests/e2e/__screenshots__/custom-datapath.png" });
     });
+
+    test("stepping a loaded example shows live operand values", async ({ page }) => {
+        await selectArchitecture(page, "RISC-V (RV32IMFD)");
+
+        // Load the first example (compile=true → auto-assembles).
+        await page.locator('[title="Examples"]').click();
+        const modal = page.locator(".modal.show");
+        await expect(modal).toBeVisible();
+        await modal.locator(".list-group-item").first().click();
+
+        // Open the datapath schematic FIRST so its trace listener is mounted
+        // before we step (the view subscribes to the trace event on mount).
+        await openSchematic(page);
+
+        // Step a few instructions; each emits a datapath trace.
+        const step = page.getByRole("button", { name: "Step" });
+        await expect(step).toBeVisible({ timeout: 20_000 });
+        for (let i = 0; i < 4; i++) {
+            await step.click();
+            await page.waitForTimeout(150);
+        }
+
+        // A live operand value ("role: reg = N") is shown on the diagram.
+        await expect(page.locator(".dp-schematic")).toContainText(/=\s*-?\d/);
+        await page
+            .locator(".dp-schematic")
+            .screenshot({ path: "tests/e2e/__screenshots__/riscv-live-values.png" });
+    });
 });
