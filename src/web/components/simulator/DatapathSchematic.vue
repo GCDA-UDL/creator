@@ -19,6 +19,12 @@ export default defineComponent({
             const t = this.trace;
             return new Set(t ? t.microops.map(m => m.stage) : []);
         },
+        op(): Record<string, string> {
+            return this.trace?.operands ?? {};
+        },
+        aluSrc(): boolean {
+            return Number(this.trace?.signals?.ALUSrc ?? 0) > 0;
+        },
     },
     methods: {
         act(stage: string): boolean {
@@ -64,7 +70,7 @@ export default defineComponent({
                 <polyline points="189,330 268,330" />
                 <polyline points="318,170 376,170" />
                 <polyline points="389,175 412,175" />
-                <polyline points="335,330 389,300 412,250" />
+                <polyline points="335,330 389,300 412,250" :class="{ wsel: aluSrc }" />
                 <polyline points="452,205 470,205" />
                 <polyline points="540,205 586,205" />
                 <polyline points="599,210 628,210" />
@@ -86,14 +92,15 @@ export default defineComponent({
             <g class="stage" :class="{ active: act('ID') }">
                 <rect class="blk greenlt" x="228" y="135" width="90" height="95" rx="4" /><text x="273" y="186" class="bt">Reg File</text>
                 <ellipse class="blk yellow" cx="300" cy="330" rx="34" ry="22" /><text x="300" y="334" class="bt sm dark">SignExt</text>
-                <text x="196" y="146" class="note">rs1</text>
-                <text x="196" y="166" class="note">rs2</text>
-                <text x="196" y="326" class="note">imm</text>
+                <text x="196" y="146" class="note val">{{ op.rs1 ? 'rs1: ' + op.rs1 : 'rs1' }}</text>
+                <text x="196" y="166" class="note val">{{ op.rs2 ? 'rs2: ' + op.rs2 : 'rs2' }}</text>
+                <text x="196" y="326" class="note val">{{ op.imm != null ? 'imm: ' + op.imm : 'imm' }}</text>
             </g>
 
             <!-- EX stage -->
             <g class="stage" :class="{ active: act('EX') }">
                 <ellipse class="blk gray" cx="430" cy="200" rx="20" ry="30" /><text x="430" y="204" class="bt sm">MUX</text>
+                <text v-if="trace" x="430" y="252" class="note val">{{ aluSrc ? 'imm' : 'rs2' }}</text>
                 <polygon class="blk cyan" points="470,175 540,195 540,215 470,235 488,205" /><text x="500" y="209" class="bt">ALU</text>
                 <rect class="blk white" x="470" y="120" width="46" height="26" rx="3" /><text x="493" y="137" class="bt sm dark">ZERO?</text>
             </g>
@@ -107,7 +114,7 @@ export default defineComponent({
             <!-- WB stage -->
             <g class="stage" :class="{ active: act('WB') }">
                 <ellipse class="blk gray" cx="820" cy="210" rx="20" ry="30" /><text x="820" y="214" class="bt sm">MUX</text>
-                <text x="852" y="360" class="note">WB Data</text>
+                <text x="852" y="360" class="note val">{{ op.rd ? 'rd: ' + op.rd : 'WB Data' }}</text>
             </g>
         </svg>
 
@@ -131,6 +138,12 @@ export default defineComponent({
 .hd { font-size: 11px; font-weight: 700; text-anchor: middle; fill: rgba(var(--bs-body-color-rgb), 0.85); }
 .lbl { font-size: 9px; text-anchor: middle; fill: rgba(var(--bs-body-color-rgb), 0.7); font-weight: 600; }
 .note { font-size: 9px; fill: rgba(var(--bs-body-color-rgb), 0.6); }
+.note.val {
+    fill: rgba(var(--bs-primary-rgb), 1);
+    font-weight: 700;
+    font-family: ui-monospace, "Cascadia Code", monospace;
+}
+.dp-wires .wsel { stroke: rgba(var(--bs-primary-rgb), 1); stroke-width: 2.6; }
 .dp-sep line { stroke: rgba(var(--bs-body-color-rgb), 0.25); stroke-width: 1; stroke-dasharray: 4 4; }
 .dp-pipereg rect { fill: #7CB342; opacity: 0.85; }
 .dp-wires polyline { fill: none; stroke: rgba(var(--bs-body-color-rgb), 0.45); stroke-width: 1.6; }

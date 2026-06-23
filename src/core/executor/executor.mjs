@@ -253,11 +253,12 @@ function processCurrentInstruction(enableCache = true) {
     let machineCode;
     let compiledFunction;
     let parameters = [];
+    let operands = []; // UdL: named operands (rd/rs1/rs2/imm) for the datapath view
 
     // Check for instruction in cache only if caching is enabled
     if (enableCache && instructionCache.has(pc_address)) {
         // If instruction is already cached, retrieve it
-        ({ instruction, asm, machineCode, compiledFunction, parameters } =
+        ({ instruction, asm, machineCode, compiledFunction, parameters, operands } =
             instructionCache.get(pc_address));
         // Increment PC based on instruction size
         incrementProgramCounter(instruction.nwords);
@@ -319,6 +320,11 @@ function processCurrentInstruction(enableCache = true) {
             }
         }
 
+        // UdL: collect named operands (rd/rs1/rs2/imm) for the datapath view
+        operands = instructionArray
+            .filter(f => f.name && f.type !== "co")
+            .map(f => ({ name: f.name, type: f.type, value: f.value }));
+
         // check privileged instructions
         if (
             status.execution_mode === ExecutionMode.User &&
@@ -339,6 +345,7 @@ function processCurrentInstruction(enableCache = true) {
                 machineCode,
                 compiledFunction,
                 parameters,
+                operands,
             });
         }
         // 4. Increment PC based on instruction size
@@ -359,6 +366,7 @@ function processCurrentInstruction(enableCache = true) {
                 instructionHex: machineCode,
                 asm,
                 type: instruction.type,
+                fields: operands,
             }),
         );
     } catch {

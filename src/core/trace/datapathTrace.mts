@@ -62,6 +62,10 @@ export interface DatapathTrace {
     branchTaken?: boolean;
     /** Exception/trap raised by the instruction, if any. */
     exception?: string;
+    /** Active control signals for the instruction (RegWrite, ALUSrc, …). */
+    signals?: Record<string, number | string>;
+    /** Named operands by role for display, e.g. { rd: "x14", rs1: "x5", imm: "10" }. */
+    operands?: Record<string, string>;
 }
 
 /** Event name emitted on the shared `coreEvents` bus for each instruction. */
@@ -119,10 +123,35 @@ export interface TraceInput {
     writes?: DataRef[];
     branchTaken?: boolean;
     exception?: string;
+    /** Decoded named fields from the engine (name/type/value). */
+    fields?: { name?: string; type?: string; value?: unknown }[];
 }
 
 const toHex = (v: bigint | string): string =>
     typeof v === "bigint" ? "0x" + v.toString(16) : v;
+
+/** Renders a register operand with its ISA prefix (x for int, f for float). */
+function regName(type: string | undefined, value: unknown): string {
+    const v = String(value);
+    if (type === "INT-Reg") return "x" + v;
+    if (type === "SFP-Reg" || type === "DFP-Reg") return "f" + v;
+    return v;
+}
+
+/** Builds a { role: rendered } operand map (rd/rs1/rs2/imm) from decoded fields. */
+function buildOperands(
+    fields?: { name?: string; type?: string; value?: unknown }[],
+): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const f of fields ?? []) {
+        if (!f.name) continue;
+        const isReg = ["INT-Reg", "Ctrl-Reg", "SFP-Reg", "DFP-Reg"].includes(
+            f.type ?? "",
+        );
+        out[f.name] = isReg ? regName(f.type, f.value) : String(f.value);
+    }
+    return out;
+}
 
 /**
  * Builds a DatapathTrace from the data available at fetch-decode-execute time.
@@ -133,17 +162,20 @@ export function buildDatapathTrace(input: TraceInput): DatapathTrace {
     const format = input.format ?? formatFromType(input.type);
     const signals = signalMap[format] ?? signalMap.UNKNOWN;
     const pc = toHex(input.pc);
+    const operands = buildOperands(input.fields);
+    const rd = operands.rd ?? "rd";
+    const src2 = signals.ALUSrc ? operands.imm ?? "imm" : operands.rs2 ?? "rs2";
 
     const microops: MicroOp[] = [
         { stage: "IF", rtl: `IR ← Mem[PC]; PC ← PC + 4`, reads: [{ kind: "pc", id: "pc", value: pc }] },
         { stage: "ID", rtl: `decode ${input.asm}`, reads: input.reads, signals },
-        { stage: "EX", rtl: `ALU computes result`, signals },
+        { stage: "EX", rtl: `ALU ← ${operands.rs1 ?? "rs1"} op ${src2}`, signals },
     ];
     if (signals.MemRead || signals.MemWrite) {
-        microops.push({ stage: "MEM", rtl: signals.MemWrite ? "Mem[ALU] ← rs2" : "MDR ← Mem[ALU]" });
+        microops.push({ stage: "MEM", rtl: signals.MemWrite ? `Mem[ALU] ← ${operands.rs2 ?? "rs2"}` : "MDR ← Mem[ALU]" });
     }
     if (signals.RegWrite) {
-        microops.push({ stage: "WB", rtl: `Reg[rd] ← result`, writes: input.writes });
+        microops.push({ stage: "WB", rtl: `Reg[${rd}] ← result`, writes: input.writes });
     }
 
     return {
@@ -153,6 +185,8 @@ export function buildDatapathTrace(input: TraceInput): DatapathTrace {
         type: input.type,
         format,
         microops,
+        signals,
+        operands,
         branchTaken: input.branchTaken,
         exception: input.exception,
     };
