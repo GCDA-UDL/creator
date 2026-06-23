@@ -65,4 +65,31 @@ test.describe("Datapath view (per-architecture)", () => {
         await expect(page.locator(".dp-settings")).toBeVisible();
         await expect(page.locator(".dp-settings")).toContainText("Theme preset");
     });
+
+    test("a custom architecture draws the datapath from its YAML block", async ({ page }) => {
+        await page.goto("/");
+        await page.waitForLoadState("networkidle");
+
+        // Open the "Load Custom Architecture" modal, fill name + file, submit.
+        await page.getByText("Load Custom Architecture", { exact: true }).first().click();
+        await page.locator("#arch-name").fill("Simple8 DP demo");
+        await page
+            .locator('input[type="file"]')
+            .setInputFiles("tests/e2e/fixtures/simple8_datapath.yml");
+        await page.getByRole("button", { name: "OK" }).click();
+
+        // Custom architecture loads through the real engine pipeline.
+        await expect(page.getByRole("button", { name: "Datapath" })).toBeVisible({ timeout: 20_000 });
+        await openSchematic(page);
+
+        // The drawing comes entirely from the YAML `datapath:` block.
+        await expect(page.locator(".dp-schematic")).toContainText(
+            "Simple8Bit — custom datapath drawn from YAML",
+        );
+        await expect(page.locator(".dp-svg").getByText("ALU", { exact: true })).toBeVisible();
+        await expect(page.locator(".dp-svg").getByText("Reg File", { exact: true })).toBeVisible();
+        await page
+            .locator(".dp-schematic")
+            .screenshot({ path: "tests/e2e/__screenshots__/custom-datapath.png" });
+    });
 });

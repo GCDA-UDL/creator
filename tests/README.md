@@ -19,6 +19,7 @@ tests/
     DatapathSchematic.spec.ts
   e2e/                       # Playwright end-to-end tests
     datapath.spec.ts
+    fixtures/                # test architectures (e.g. simple8_datapath.yml)
     __screenshots__/         # screenshots captured by the e2e run (visual reference)
   arch/                      # pre-existing CREATOR architecture test utils
 ```
@@ -49,7 +50,10 @@ npm run test:unit:watch    # watch mode
 
 Drive the real app, exercise the full flow and capture screenshots (visual
 reference for review). They expect the dev server; the Playwright config starts
-`npm run dev:web` automatically (or reuses one already running).
+`npm run dev:web` automatically (or reuses one already running). Covered: RISC-V
+and MIPS draw their datapath, student mode, the display settings panel, and a
+**custom architecture** (`fixtures/simple8_datapath.yml`) uploaded through the
+real engine pipeline that draws entirely from its YAML `datapath:` block.
 
 ```bash
 npx playwright install chromium   # first time only (downloads the browser)
