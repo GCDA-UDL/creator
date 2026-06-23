@@ -99,15 +99,9 @@ export default defineComponent({
 
 <template>
     <div class="datapath-container">
-        <!-- Empty state -->
-        <div v-if="!trace" class="dp-empty">
-            <font-awesome-icon :icon="['fas', 'diagram-project']" class="dp-empty-icon" />
-            <p>Run an instruction (step) to see the RISC-V datapath.</p>
-        </div>
-
-        <div v-else class="dp-content">
-            <!-- Current instruction summary -->
-            <div class="dp-summary">
+        <div class="dp-content">
+            <!-- Current instruction summary (only once an instruction has run) -->
+            <div v-if="trace" class="dp-summary">
                 <div class="summary-card">
                     <div class="summary-label">PC</div>
                     <div class="summary-value">{{ trace.pc }}</div>
@@ -157,8 +151,8 @@ export default defineComponent({
                 </div>
             </div>
 
-            <!-- Control signals -->
-            <div class="dp-section">
+            <!-- Control signals (only when an instruction has run) -->
+            <div v-if="trace" class="dp-section">
                 <h6 class="dp-title">Control signals</h6>
                 <div class="dp-signals">
                     <span
@@ -172,8 +166,8 @@ export default defineComponent({
                 </div>
             </div>
 
-            <!-- Micro-operations -->
-            <div class="dp-section">
+            <!-- Micro-operations (only when an instruction has run) -->
+            <div v-if="trace" class="dp-section">
                 <h6 class="dp-title">Micro-operations (RTL)</h6>
                 <div class="dp-microops">
                     <div
