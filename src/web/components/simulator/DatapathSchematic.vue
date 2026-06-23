@@ -146,7 +146,7 @@ export default defineComponent({
             <button class="dp-help-x" title="Close" @click="explain = null">×</button>
             <strong>{{ help[explain].title }}</strong>
             <p>{{ help[explain].desc }}</p>
-            <p class="dp-look">👀 {{ help[explain].look }}</p>
+            <p class="dp-look">Watch: {{ help[explain].look }}</p>
         </div>
         <div v-else-if="studentMode" class="dp-help hint">
             Click a <span class="qbadge">?</span> on the diagram to learn what each part does, where its data comes from and what to watch.
