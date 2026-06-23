@@ -32,6 +32,7 @@ import {
     signalMap,
 } from "@/core/trace/datapathTrace.mts";
 import DatapathSchematic from "./DatapathSchematic.vue";
+import { architecture } from "@/core/core.mjs";
 
 interface DpBlock {
     id: string;
@@ -84,6 +85,14 @@ export default defineComponent({
             if (!this.trace) return {};
             return signalMap[this.trace.format] ?? signalMap.UNKNOWN;
         },
+        /** Loaded architecture plugin (riscv, mips, …) — selects the drawn datapath. */
+        plugin(): string {
+            return (architecture as any)?.config?.plugin ?? "";
+        },
+        /** Optional custom datapath spec authored in the architecture YAML. */
+        customSpec(): any {
+            return (architecture as any)?.datapath ?? null;
+        },
     },
 
     methods: {
@@ -126,8 +135,8 @@ export default defineComponent({
                 <button class="dp-mode-btn" :class="{ active: mode === 'schematic' }" @click="mode = 'schematic'">Schematic</button>
             </div>
 
-            <!-- Drawn schematic (RV32I, Patterson-style) -->
-            <DatapathSchematic v-if="mode === 'schematic'" :trace="trace" />
+            <!-- Drawn schematic (per-architecture, data-driven) -->
+            <DatapathSchematic v-if="mode === 'schematic'" :trace="trace" :plugin="plugin" :custom-spec="customSpec" />
 
             <!-- Block view (generic, any architecture) -->
             <template v-else>

@@ -1,13 +1,16 @@
 <!--
 Copyright 2018-2026 CREATOR Team. LGPL-3.0.
-UdL extension (PID RISC-V) — drawn datapath (Patterson-style 5-stage schematic).
-Renders the classic RV32I datapath as SVG, highlights the stages the current
-instruction traverses and shows its operands, driven by the "datapath-trace".
-Appearance is customisable via a gear settings panel (persisted in localStorage).
+UdL extension (PID RISC-V) — generic, data-driven datapath renderer.
+Draws the datapath of the loaded architecture from a `DatapathSpec` (built-in per
+plugin, or a custom one authored in the architecture YAML), and binds it to the
+live "datapath-trace": active stages, operand values, MUX source, branch path and
+optional M/FPU units. Appearance is customisable via a gear panel (localStorage).
 -->
 <script lang="ts">
 import { defineComponent, type PropType } from "vue";
 import type { DatapathTrace } from "@/core/trace/datapathTrace.mts";
+import { resolveDatapathSpec } from "./datapath/index";
+import type { DatapathSpec } from "./datapath/spec";
 
 interface DpSettings {
     labelSize: number;
@@ -36,24 +39,6 @@ const DEFAULTS: DpSettings = {
 };
 const LS_KEY = "creator-dp-schematic-settings";
 
-/** Student-mode explanations for each datapath element. */
-const HELP: Record<string, { title: string; desc: string; look: string }> = {
-    pc: { title: "PC — Program Counter", desc: "Holds the address of the instruction being executed.", look: "It increases by 4 each step (word size), or jumps to a target on branches/jumps." },
-    imem: { title: "Instruction Memory", desc: "Stores the program. The PC indexes it to fetch the instruction word in the IF stage.", look: "The 'Instruction' field at the top shows the fetched instruction." },
-    add: { title: "Adder (Next PC)", desc: "Computes PC + 4 (next sequential instruction) and branch/jump targets.", look: "Active in every fetch; the branch target path is used when a branch is taken." },
-    regfile: { title: "Register File (x0–x31)", desc: "Reads source registers rs1/rs2 in ID and writes the destination rd in WB.", look: "rs1/rs2 feed the ALU; rd is written back at the end (WB)." },
-    signext: { title: "Sign Extend", desc: "Extends the instruction's immediate to 32 bits (I, S, B, U, J formats).", look: "Used when ALUSrc = 1 (the immediate goes into the ALU instead of rs2)." },
-    muxex: { title: "ALU source MUX", desc: "Selects the ALU's second operand: rs2 (R-type) or the immediate (I/S/U).", look: "Controlled by ALUSrc — the highlighted label shows which one is chosen." },
-    alu: { title: "ALU", desc: "Arithmetic-Logic Unit: add/sub/and/or/shift… or the effective address for load/store.", look: "Its result goes to Write-Back, or to Data Memory for load/store." },
-    zero: { title: "ZERO? (branch test)", desc: "Comparison flag used to decide if a conditional branch is taken.", look: "Relevant for B-type instructions (beq, bne, …)." },
-    datamem: { title: "Data Memory", desc: "Main data memory. Loads read it (MemRead); stores write it (MemWrite), in the MEM stage.", look: "Only active for load/store instructions." },
-    muxmem: { title: "Next-PC MUX", desc: "Chooses the next PC: PC + 4 or the branch/jump target.", look: "Switches to the target when a branch is taken." },
-    muxwb: { title: "Write-Back MUX", desc: "Chooses what is written to rd: the ALU result or the value loaded from memory (MemToReg).", look: "For loads it picks memory data; otherwise the ALU result." },
-    pipereg: { title: "Stage registers (IF/ID … MEM/WB)", desc: "Boundaries between the five stages (Fetch, Decode, Execute, Memory, Write-Back).", look: "In this functional view they delimit the phases the instruction goes through." },
-    mul: { title: "Multiplier (M extension)", desc: "Integer multiply/divide unit (mul, mulh, div, rem). Only present when the ISA includes the M extension.", look: "Lights up for mul/div/rem; plain RV32I has no multiplier." },
-    fpu: { title: "FPU (F / D extensions)", desc: "Floating-point unit for single- (F) and double-precision (D) arithmetic, using the f0–f31 registers.", look: "Lights up for floating-point instructions; absent in integer-only ISAs." },
-};
-
 /** Generic, university-neutral appearance presets. */
 const PRESETS: Record<string, Partial<DpSettings>> = {
     Classic: { scheme: "classic", valColor: "#4fc3f7", haloColor: "#0b1020", haloWidth: 3.5, activeColor: "#ffb300", highlight: 0.5, dimOpacity: 0.4 },
@@ -65,6 +50,10 @@ const PRESETS: Record<string, Partial<DpSettings>> = {
 export default defineComponent({
     props: {
         trace: { type: Object as PropType<DatapathTrace | null>, default: null },
+        /** Architecture plugin (riscv, mips, …) used to pick the built-in spec. */
+        plugin: { type: String, default: "" },
+        /** Optional custom spec authored in the architecture YAML (`datapath:`). */
+        customSpec: { type: Object as PropType<Partial<DatapathSpec> | null>, default: null },
     },
     data() {
         return {
@@ -72,7 +61,6 @@ export default defineComponent({
             showSettings: false,
             studentMode: false,
             explain: null as string | null,
-            help: HELP,
             presets: PRESETS,
         };
     },
@@ -97,6 +85,9 @@ export default defineComponent({
         },
     },
     computed: {
+        spec(): DatapathSpec | null {
+            return resolveDatapathSpec(this.plugin, this.customSpec);
+        },
         stages(): Set<string> {
             const t = this.trace;
             return new Set(t ? t.microops.map(m => m.stage) : []);
@@ -104,11 +95,11 @@ export default defineComponent({
         op(): Record<string, string> {
             return this.trace?.operands ?? {};
         },
-        aluSrc(): boolean {
-            return Number(this.trace?.signals?.ALUSrc ?? 0) > 0;
-        },
         val(): Record<string, string> {
             return this.trace?.operandValues ?? {};
+        },
+        aluSrc(): boolean {
+            return Number(this.trace?.signals?.ALUSrc ?? 0) > 0;
         },
         branched(): boolean {
             return this.trace?.branchTaken === true;
@@ -121,6 +112,25 @@ export default defineComponent({
         },
         hasFP(): boolean {
             return this.trace?.extensions?.some(e => e === "F" || e === "D") ?? false;
+        },
+        destRole(): string {
+            const roles = this.spec?.destRoles ?? ["rd"];
+            return roles.find(r => this.op[r] != null) ?? roles[0];
+        },
+        visibleUnits() {
+            return (this.spec?.units ?? []).filter(u => this.extActive(u.extReq));
+        },
+        qmarks(): { id: string; x: number; y: number }[] {
+            const s = this.spec;
+            if (!s) return [];
+            const out: { id: string; x: number; y: number }[] = [];
+            for (const b of s.blocks) if (b.qmark) out.push({ id: b.id, x: b.qmark.x, y: b.qmark.y });
+            for (const e of s.extraQmarks ?? []) out.push({ id: e.id, x: e.x, y: e.y });
+            for (const u of this.visibleUnits) if (u.qmark) out.push({ id: u.id, x: u.qmark.x, y: u.qmark.y });
+            return out;
+        },
+        helpMap(): Record<string, { title: string; desc: string; look: string }> {
+            return this.spec?.help ?? {};
         },
         rootStyle(): Record<string, string> {
             const s = this.settings;
@@ -146,6 +156,20 @@ export default defineComponent({
             const v = this.val[role];
             return role + ": " + name + (v !== undefined ? " = " + v : "");
         },
+        immValue(role: string): string | undefined {
+            for (const k of [role, "imm", "offset", "inm"]) {
+                const v = this.op[k];
+                if (v != null && v !== "") return v;
+            }
+            return undefined;
+        },
+        immLabel(role: string): string {
+            const v = this.immValue(role);
+            return v !== undefined ? role + ": " + v : role;
+        },
+        extActive(req: "M" | "FP"): boolean {
+            return req === "M" ? this.hasM : this.hasFP;
+        },
         applyPreset(name: string) {
             this.settings = { ...this.settings, ...(PRESETS[name] ?? {}) };
         },
@@ -169,13 +193,13 @@ export default defineComponent({
         </div>
 
         <!-- Student-mode help box -->
-        <div v-if="studentMode && explain" class="dp-help">
+        <div v-if="studentMode && explain && helpMap[explain]" class="dp-help">
             <button class="dp-help-x" title="Close" @click="explain = null">×</button>
-            <strong>{{ help[explain].title }}</strong>
-            <p>{{ help[explain].desc }}</p>
-            <p class="dp-look">Watch: {{ help[explain].look }}</p>
+            <strong>{{ helpMap[explain].title }}</strong>
+            <p>{{ helpMap[explain].desc }}</p>
+            <p class="dp-look">Watch: {{ helpMap[explain].look }}</p>
         </div>
-        <div v-else-if="studentMode" class="dp-help hint">
+        <div v-else-if="studentMode && spec" class="dp-help hint">
             Click a <span class="qbadge">?</span> on the diagram to learn what each part does, where its data comes from and what to watch.
         </div>
 
@@ -218,8 +242,14 @@ export default defineComponent({
             </div>
         </div>
 
+        <!-- No drawn datapath for this architecture -->
+        <p v-if="!spec" class="dp-note-cap">
+            No drawn datapath for this architecture yet — use the <strong>Blocks</strong> view (it works for any ISA).
+        </p>
+
         <svg
-            viewBox="0 0 940 430"
+            v-else
+            :viewBox="spec.viewBox"
             preserveAspectRatio="xMidYMid meet"
             class="dp-svg"
             :class="'scheme-' + settings.scheme"
@@ -227,124 +257,77 @@ export default defineComponent({
         >
             <!-- Stage headers -->
             <g class="dp-headers">
-                <text x="95" y="22" class="hd">Instruction Fetch</text>
-                <text x="285" y="22" class="hd">Instr. Decode / Reg Fetch</text>
-                <text x="485" y="22" class="hd">Execute / Addr. Calc</text>
-                <text x="680" y="22" class="hd">Memory Access</text>
-                <text x="855" y="22" class="hd">Write Back</text>
+                <text v-for="(h, i) in spec.headers" :key="'h' + i" :x="h.x" y="22" class="hd">{{ h.label }}</text>
             </g>
 
             <!-- Dashed stage separators -->
             <g class="dp-sep">
-                <line x1="182" y1="34" x2="182" y2="410" />
-                <line x1="382" y1="34" x2="382" y2="410" />
-                <line x1="592" y1="34" x2="592" y2="410" />
-                <line x1="772" y1="34" x2="772" y2="410" />
+                <line v-for="(x, i) in spec.separators" :key="'s' + i" :x1="x" y1="34" :x2="x" y2="410" />
             </g>
 
-            <!-- Pipeline registers (green bars) -->
+            <!-- Pipeline registers -->
             <g class="dp-pipereg">
-                <rect x="176" y="40" width="13" height="360" /><text x="182" y="416" class="lbl">IF/ID</text>
-                <rect x="376" y="40" width="13" height="360" /><text x="382" y="416" class="lbl">ID/EX</text>
-                <rect x="586" y="40" width="13" height="360" /><text x="592" y="416" class="lbl">EX/MEM</text>
-                <rect x="766" y="40" width="13" height="360" /><text x="772" y="416" class="lbl">MEM/WB</text>
+                <template v-for="(p, i) in spec.pipeRegs" :key="'p' + i">
+                    <rect :x="p.x" y="40" width="13" height="360" />
+                    <text :x="p.x + 6" y="416" class="lbl">{{ p.label }}</text>
+                </template>
             </g>
 
-            <!-- Representative wires (highlight + flow on the active stage) -->
+            <!-- Static notes -->
+            <text v-for="(n, i) in spec.notes" :key="'n' + i" :x="n.x" :y="n.y" class="note">{{ n.text }}</text>
+
+            <!-- Wires (highlight + flow on the active stage) -->
             <g v-if="settings.showWires" class="dp-wires">
-                <polyline points="58,210 78,210" :class="{ won: act('IF') }" />
-                <polyline points="148,210 176,210" :class="{ won: act('IF') }" />
-                <polyline points="58,150 40,150 40,90 60,90" :class="{ won: act('IF') }" />
-                <polyline points="189,150 228,150" :class="{ won: act('ID') }" />
-                <polyline points="189,330 268,330" :class="{ won: act('ID') }" />
-                <polyline points="318,170 376,170" :class="{ won: act('EX') }" />
-                <polyline points="389,175 412,175" :class="{ won: act('EX') }" />
-                <polyline points="335,330 389,300 412,250" :class="{ won: act('EX'), wsel: aluSrc }" />
-                <polyline points="452,205 470,205" :class="{ won: act('EX') }" />
-                <polyline points="540,205 586,205" :class="{ won: act('EX') }" />
-                <polyline points="599,210 628,210" :class="{ won: act('MEM') }" />
-                <polyline points="712,210 766,210" :class="{ won: act('MEM') }" />
-                <polyline points="779,210 800,210" :class="{ won: act('WB') }" />
-                <polyline points="840,210 880,210 880,360 250,360 250,240" :class="['wb', { won: act('WB') }]" />
+                <polyline
+                    v-for="(w, i) in spec.wires"
+                    :key="'w' + i"
+                    :points="w.points"
+                    :class="{ won: w.stage && act(w.stage), wsel: w.selImm && aluSrc, wb: w.dashed }"
+                />
             </g>
 
-            <!-- IF stage -->
-            <g class="stage" :class="{ active: act('IF') }">
-                <rect class="blk green" x="26" y="190" width="34" height="44" rx="3" /><text x="43" y="216" class="bt">PC</text>
-                <rect class="blk red" x="78" y="178" width="70" height="68" rx="4" /><text x="113" y="216" class="bt">IMem</text>
-                <polygon class="blk blue" points="60,70 96,84 96,116 60,130 70,100" /><text x="80" y="104" class="bt sm">Add</text>
-                <text x="30" y="70" class="note">Next PC</text>
+            <!-- Functional blocks -->
+            <g v-for="b in spec.blocks" :key="b.id" class="stage" :class="{ active: b.stage && act(b.stage) }">
+                <rect v-if="b.geom.kind === 'rect'" class="blk" :class="b.color" :x="b.geom.x" :y="b.geom.y" :width="b.geom.w" :height="b.geom.h" :rx="b.geom.rx" />
+                <ellipse v-else-if="b.geom.kind === 'ellipse'" class="blk" :class="b.color" :cx="b.geom.cx" :cy="b.geom.cy" :rx="b.geom.rx" :ry="b.geom.ry" />
+                <polygon v-else-if="b.geom.kind === 'polygon'" class="blk" :class="b.color" :points="b.geom.points" />
+                <text :x="b.labelPos.x" :y="b.labelPos.y" class="bt" :class="{ sm: b.small, dark: b.dark }">{{ b.label }}</text>
             </g>
 
-            <!-- ID stage -->
-            <g class="stage" :class="{ active: act('ID') }">
-                <rect class="blk greenlt" x="228" y="135" width="90" height="95" rx="4" /><text x="273" y="186" class="bt">Reg File</text>
-                <ellipse class="blk yellow" cx="300" cy="330" rx="34" ry="22" /><text x="300" y="334" class="bt sm dark">SignExt</text>
-                <text v-if="settings.showValues" x="196" y="146" class="note val">{{ valLabel('rs1') }}</text>
-                <text v-if="settings.showValues" x="196" y="166" class="note val">{{ valLabel('rs2') }}</text>
-                <text v-if="settings.showValues" x="196" y="326" class="note val">{{ op.imm != null && op.imm !== '' ? 'imm: ' + op.imm : 'imm' }}</text>
-            </g>
+            <!-- Operand values -->
+            <template v-if="settings.showValues">
+                <text v-for="(v, i) in spec.values" :key="'val' + i" :x="v.x" :y="v.y" class="note val">{{ v.kind === 'imm' ? immLabel(v.role) : valLabel(v.role) }}</text>
+                <text :x="spec.wb.x" :y="spec.wb.y" class="note val">{{ op[destRole] ? valLabel(destRole) : 'WB Data' }}</text>
+                <text v-if="spec.aluResult && unit === 'alu' && val[destRole] !== undefined" :x="spec.aluResult.x" :y="spec.aluResult.y" class="note val">= {{ val[destRole] }}</text>
+                <text v-if="spec.muxSrc && trace" :x="spec.muxSrc.x" :y="spec.muxSrc.y" class="note val">{{ aluSrc ? 'imm' : spec.srcRegRole }}</text>
+            </template>
 
-            <!-- EX stage -->
-            <g class="stage" :class="{ active: act('EX') }">
-                <ellipse class="blk gray" cx="430" cy="200" rx="20" ry="30" /><text x="430" y="204" class="bt sm">MUX</text>
-                <text v-if="settings.showValues && trace" x="430" y="252" class="note val">{{ aluSrc ? 'imm' : 'rs2' }}</text>
-                <polygon class="blk cyan" points="470,175 540,195 540,215 470,235 488,205" /><text x="500" y="209" class="bt">ALU</text>
-                <text v-if="settings.showValues && unit === 'alu' && val.rd !== undefined" x="556" y="200" class="note val">= {{ val.rd }}</text>
-                <rect class="blk white" x="470" y="120" width="46" height="26" rx="3" /><text x="493" y="137" class="bt sm dark">ZERO?</text>
-            </g>
-
-            <!-- MEM stage -->
-            <g class="stage" :class="{ active: act('MEM') }">
-                <rect class="blk red" x="628" y="176" width="84" height="68" rx="4" /><text x="670" y="214" class="bt">DataMem</text>
-                <ellipse class="blk gray" cx="700" cy="78" rx="20" ry="26" /><text x="700" y="82" class="bt sm">MUX</text>
-            </g>
-
-            <!-- WB stage -->
-            <g class="stage" :class="{ active: act('WB') }">
-                <ellipse class="blk gray" cx="820" cy="210" rx="20" ry="30" /><text x="820" y="214" class="bt sm">MUX</text>
-                <text v-if="settings.showValues" x="852" y="360" class="note val">{{ op.rd ? valLabel('rd') : 'WB Data' }}</text>
-            </g>
-
-            <!-- Optional execution units, shown only if the loaded ISA has them -->
+            <!-- Optional execution units (shown per ISA extensions) -->
             <g class="dp-units">
-                <g v-if="hasM" class="unit mul" :class="{ 'unit-on': unit === 'mul' }">
-                    <text x="507" y="262" class="ulbl">M ext</text>
-                    <rect x="470" y="266" width="76" height="26" rx="3" /><text x="508" y="283">MUL ×÷</text>
-                </g>
-                <g v-if="hasFP" class="unit fpu" :class="{ 'unit-on': unit === 'fpu' }">
-                    <text x="507" y="304" class="ulbl">F/D ext</text>
-                    <rect x="470" y="308" width="76" height="26" rx="3" /><text x="508" y="325">FPU</text>
+                <g v-for="u in visibleUnits" :key="u.id" class="unit" :class="[u.fillClass, { 'unit-on': unit === u.unit }]">
+                    <text :x="u.ulblPos.x" :y="u.ulblPos.y" class="ulbl">{{ u.ulbl }}</text>
+                    <rect :x="u.rect.x" :y="u.rect.y" :width="u.rect.w" :height="u.rect.h" :rx="u.rect.rx" />
+                    <text :x="u.labelPos.x" :y="u.labelPos.y">{{ u.label }}</text>
                 </g>
             </g>
 
-            <!-- Branch-taken path: next PC takes the branch/jump target -->
-            <g v-if="branched" class="dp-branch">
-                <polyline points="540,188 566,92 678,84" />
-                <text x="568" y="74" class="note val">branch taken</text>
+            <!-- Branch-taken path -->
+            <g v-if="branched && spec.branchPath" class="dp-branch">
+                <polyline :points="spec.branchPath.points" />
+                <text :x="spec.branchPath.x" :y="spec.branchPath.y" class="note val">branch taken</text>
             </g>
 
-            <!-- Student-mode question marks (click for explanation) -->
+            <!-- Student-mode question marks -->
             <g v-if="studentMode" class="dp-qmarks">
-                <g class="qmark" @click="explain = 'add'"><circle cx="100" cy="64" r="9" /><text x="100" y="68">?</text></g>
-                <g class="qmark" @click="explain = 'pc'"><circle cx="64" cy="186" r="9" /><text x="64" y="190">?</text></g>
-                <g class="qmark" @click="explain = 'imem'"><circle cx="150" cy="174" r="9" /><text x="150" y="178">?</text></g>
-                <g class="qmark" @click="explain = 'pipereg'"><circle cx="190" cy="46" r="9" /><text x="190" y="50">?</text></g>
-                <g class="qmark" @click="explain = 'regfile'"><circle cx="322" cy="131" r="9" /><text x="322" y="135">?</text></g>
-                <g class="qmark" @click="explain = 'signext'"><circle cx="336" cy="312" r="9" /><text x="336" y="316">?</text></g>
-                <g class="qmark" @click="explain = 'muxex'"><circle cx="448" cy="174" r="9" /><text x="448" y="178">?</text></g>
-                <g class="qmark" @click="explain = 'alu'"><circle cx="544" cy="178" r="9" /><text x="544" y="182">?</text></g>
-                <g class="qmark" @click="explain = 'zero'"><circle cx="520" cy="118" r="9" /><text x="520" y="122">?</text></g>
-                <g class="qmark" @click="explain = 'datamem'"><circle cx="716" cy="172" r="9" /><text x="716" y="176">?</text></g>
-                <g class="qmark" @click="explain = 'muxmem'"><circle cx="722" cy="56" r="9" /><text x="722" y="60">?</text></g>
-                <g class="qmark" @click="explain = 'muxwb'"><circle cx="840" cy="186" r="9" /><text x="840" y="190">?</text></g>
-                <g v-if="hasM" class="qmark" @click="explain = 'mul'"><circle cx="556" cy="279" r="9" /><text x="556" y="283">?</text></g>
-                <g v-if="hasFP" class="qmark" @click="explain = 'fpu'"><circle cx="556" cy="321" r="9" /><text x="556" y="325">?</text></g>
+                <g v-for="q in qmarks" :key="q.id" class="qmark" @click="explain = q.id">
+                    <circle :cx="q.x" :cy="q.y" r="9" />
+                    <text :x="q.x" :y="q.y + 4">?</text>
+                </g>
             </g>
         </svg>
 
-        <p class="dp-note-cap">
-            RV32I datapath — the stage the current instruction goes through is highlighted.
+        <p v-if="spec" class="dp-note-cap">
+            {{ spec.caption }}
             <span v-if="trace">({{ trace.asm }})</span>
         </p>
     </div>
