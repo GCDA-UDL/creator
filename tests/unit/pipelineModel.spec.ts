@@ -94,6 +94,42 @@ describe("schedulePipeline — núcleo", () => {
         expect(s.stats.branchTakenStalls).toBe(0);
     });
 
+    it("WAW: a short op after a long multiply stalls to keep WB in order", () => {
+        const s = schedulePipeline(
+            [I({ unit: "mul", mnemonic: "mul", writes: ["x1"] }), I({ writes: ["x1"], reads: ["x9"] })],
+            cfg({ mulLatency: 7 }),
+        );
+        expect(s.stats.wawStalls).toBeGreaterThan(0);
+        expect(s.rows[1].cells.some(c => c.stallKind === "WAW")).toBe(true);
+    });
+
+    it("delay slot hides one branch-taken bubble", () => {
+        const noDS = schedulePipeline([I({ isBranch: true, branchTaken: true, mnemonic: "beq" }), I({ writes: ["x5"] })], cfg());
+        const ds = schedulePipeline([I({ isBranch: true, branchTaken: true, mnemonic: "beq" }), I({ writes: ["x5"] })], cfg({ delaySlot: true }));
+        expect(ds.stats.branchTakenStalls).toBe(noDS.stats.branchTakenStalls - 1);
+    });
+
+    it("BTB removes the penalty on a repeated taken branch", () => {
+        const stream = [
+            I({ isBranch: true, branchTaken: true, mnemonic: "beq", pc: "0x4" }),
+            I({ writes: ["x5"] }),
+            I({ isBranch: true, branchTaken: true, mnemonic: "beq", pc: "0x4" }),
+        ];
+        const off = schedulePipeline(stream, cfg({ btb: false }));
+        const on = schedulePipeline(stream, cfg({ btb: true }));
+        expect(on.stats.branchTakenStalls).toBeLessThan(off.stats.branchTakenStalls);
+    });
+
+    it("BTB misprediction when a learned-taken branch falls through", () => {
+        const stream = [
+            I({ isBranch: true, branchTaken: true, mnemonic: "beq", pc: "0x8" }),
+            I({ writes: ["x5"] }),
+            I({ isBranch: true, branchTaken: false, mnemonic: "beq", pc: "0x8" }),
+        ];
+        const s = schedulePipeline(stream, cfg({ btb: true }));
+        expect(s.stats.branchMispredStalls).toBeGreaterThan(0);
+    });
+
     it("RAW stall cell records the awaited register and its ready cycle", () => {
         const s = schedulePipeline(
             [I({ isLoad: true, mnemonic: "lw", writes: ["x1"] }), I({ reads: ["x1"], writes: ["x2"] })],

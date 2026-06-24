@@ -48,7 +48,11 @@ test.describe("Cycle timeline (pipeline)", () => {
         // Statistics present.
         await expect(page.locator(".cyc-stats")).toContainText("Cycles");
         await expect(page.locator(".cyc-stats")).toContainText("CPI");
+        await expect(page.locator(".cyc-stats")).toContainText("WAW");
+        await expect(page.locator(".cyc-stats")).toContainText("Branch-mispred");
         expect(await cyclesCount(page)).toBeGreaterThan(0);
+        // pipeline window: five stage boxes (IF/ID/EX/MEM/WB)
+        expect(await page.locator(".cyc-pipe .pbox").count()).toBe(5);
 
         await page.locator(".cyc-view").screenshot({ path: "tests/e2e/__screenshots__/mips-cycles.png" });
     });

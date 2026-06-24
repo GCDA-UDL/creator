@@ -21,12 +21,16 @@ import {
 
 interface CyclesConfig {
     forwarding: boolean;
+    btb: boolean;
+    delaySlot: boolean;
     fpAddLatency: number;
     mulLatency: number;
     divLatency: number;
 }
 const DEFAULTS: CyclesConfig = {
     forwarding: DEFAULT_PIPELINE_CONFIG.forwarding,
+    btb: false,
+    delaySlot: false,
     fpAddLatency: DEFAULT_PIPELINE_CONFIG.fpAddLatency,
     mulLatency: DEFAULT_PIPELINE_CONFIG.mulLatency,
     divLatency: DEFAULT_PIPELINE_CONFIG.divLatency,
@@ -35,8 +39,9 @@ const LS_KEY = "creator-cycles-config";
 const MAX_ROWS = 250;
 
 const PRESETS: Record<string, CyclesConfig> = {
-    "MIPS classic": { forwarding: true, fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
-    "No forwarding": { forwarding: false, fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
+    "MIPS classic": { forwarding: true, btb: false, delaySlot: true, fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
+    "No forwarding": { forwarding: false, btb: false, delaySlot: false, fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
+    "Predicted (BTB)": { forwarding: true, btb: true, delaySlot: false, fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
 };
 
 export default defineComponent({
@@ -96,6 +101,8 @@ export default defineComponent({
             const cfg: PipelineConfig = {
                 ...DEFAULT_PIPELINE_CONFIG,
                 forwarding: this.config.forwarding,
+                btb: this.config.btb,
+                delaySlot: this.config.delaySlot,
                 fpAddLatency: this.config.fpAddLatency,
                 mulLatency: this.config.mulLatency,
                 divLatency: this.config.divLatency,
@@ -131,6 +138,32 @@ export default defineComponent({
             const max = this.displayMaxCycle;
             if (max <= 0) return 0;
             return this.live ? max : Math.min(Math.max(this.cursor, 1), max);
+        },
+        /** Pipeline-window occupancy at the cursor cycle (one instruction per stage box). */
+        pipelineBoxes(): { id: string; occupant: string; unit: string; stalled: boolean }[] {
+            const cyc = this.cursorCycle;
+            const groups: Record<string, { occupant: string; unit: string; stalled: boolean }> = {};
+            for (const gr of this.gridRows) {
+                const cell = gr.byCycle.get(cyc);
+                if (!cell) continue;
+                let g = cell.stage as string;
+                let unit = "";
+                if (cell.stalled) {
+                    g = "ID";
+                } else if (g === "EX" || g === "DIV" || g[0] === "M" || g[0] === "A") {
+                    unit = g === "EX" ? "" : g;
+                    g = "EX";
+                }
+                if (!groups[g]) {
+                    groups[g] = { occupant: gr.instr.mnemonic || gr.instr.asm, unit, stalled: !!cell.stalled };
+                }
+            }
+            return ["IF", "ID", "EX", "MEM", "WB"].map(id => ({
+                id,
+                occupant: groups[id]?.occupant ?? "",
+                unit: groups[id]?.unit ?? "",
+                stalled: groups[id]?.stalled ?? false,
+            }));
         },
         stats() {
             return this.schedule.stats;
@@ -168,6 +201,15 @@ export default defineComponent({
                 return cell.readyCycle != null
                     ? `Structural stall — divider busy, free in cycle ${cell.readyCycle}`
                     : "Structural stall";
+            }
+            if (cell.stallKind === "WAW") {
+                return (
+                    `WAW stall — write to ${cell.waitFor} kept in order` +
+                    (cell.readyCycle != null ? ` (earlier writer commits in cycle ${cell.readyCycle})` : "")
+                );
+            }
+            if (cell.stallKind === "WAR") {
+                return `WAR stall — ${cell.waitFor ?? "register"}`;
             }
             if (cell.waitFor) {
                 return (
@@ -242,10 +284,10 @@ export default defineComponent({
                 <label>Division latency</label>
                 <input type="number" min="1" max="40" v-model.number="config.divLatency" />
             </div>
-            <div class="cyc-row cyc-muted">
-                <label><input type="checkbox" disabled /> Branch Target Buffer <i>(coming soon)</i></label>
-                <label><input type="checkbox" disabled /> Delay slot <i>(coming soon)</i></label>
-                <span>Code/Data Address Bus: 10</span>
+            <div class="cyc-row">
+                <label class="cyc-chk"><input type="checkbox" v-model="config.btb" /> Branch Target Buffer</label>
+                <label class="cyc-chk"><input type="checkbox" v-model="config.delaySlot" /> Delay slot</label>
+                <span class="cyc-muted">Code/Data Address Bus: 10</span>
             </div>
         </div>
 
@@ -263,7 +305,10 @@ export default defineComponent({
                 <div class="stat"><div class="n">{{ stats.codeSize }}</div><div class="l">Code size (instr)</div></div>
                 <div class="stat"><div class="n">{{ stats.rawStalls }}</div><div class="l">RAW stalls</div></div>
                 <div class="stat"><div class="n">{{ stats.structStalls }}</div><div class="l">Structural stalls</div></div>
+                <div class="stat"><div class="n">{{ stats.wawStalls }}</div><div class="l">WAW stalls</div></div>
+                <div class="stat"><div class="n">{{ stats.warStalls }}</div><div class="l">WAR stalls</div></div>
                 <div class="stat"><div class="n">{{ stats.branchTakenStalls }}</div><div class="l">Branch-taken stalls</div></div>
+                <div class="stat"><div class="n">{{ stats.branchMispredStalls }}</div><div class="l">Branch-mispred stalls</div></div>
             </div>
 
             <!-- Legend -->
@@ -292,6 +337,19 @@ export default defineComponent({
                 <button class="cyc-cbtn" :disabled="cursorCycle >= displayMaxCycle" title="Next cycle" @click="stepCursor(1)">▶</button>
                 <button class="cyc-cbtn cyc-clive" :class="{ active: live }" title="Follow the latest cycle" @click="goLive">Live</button>
                 <span class="cyc-cursor-hint">advance one clock and watch the pipeline fill</span>
+            </div>
+
+            <!-- Pipeline window: which instruction is in each stage at the cursor cycle -->
+            <div class="cyc-pipe">
+                <div
+                    v-for="b in pipelineBoxes"
+                    :key="b.id"
+                    class="pbox"
+                    :class="['p-' + b.id.toLowerCase(), { occ: !!b.occupant, stl: b.stalled }]"
+                >
+                    <div class="pstage">{{ b.id }}<span v-if="b.unit" class="punit"> · {{ b.unit }}</span></div>
+                    <div class="pocc">{{ b.occupant || '—' }}<span v-if="b.stalled"> · stall</span></div>
+                </div>
             </div>
 
             <!-- Instruction × cycle grid -->
@@ -391,6 +449,20 @@ export default defineComponent({
 .cyc-cursor-hint { font-size: 0.7rem; color: rgba(var(--bs-body-color-rgb), 0.55); font-style: italic; }
 .stg.now { outline: 2px solid rgba(var(--bs-body-color-rgb), 0.85); outline-offset: -2px; filter: brightness(1.1); }
 .cyc-cnum.now { color: rgba(var(--bs-primary-rgb), 1); font-weight: 800; }
+
+/* Pipeline window (box row at the cursor cycle) */
+.cyc-pipe { display: flex; gap: 6px; }
+.pbox { flex: 1; border: 1px solid var(--line, rgba(0,0,0,.12)); border-radius: 8px; overflow: hidden; background: rgba(var(--bs-secondary-rgb), 0.05); opacity: 0.5; transition: opacity 150ms ease; }
+.pbox.occ { opacity: 1; }
+.pstage { font-size: 0.62rem; font-weight: 800; color: #fff; padding: 3px 7px; letter-spacing: 0.03em; }
+.p-if .pstage { background: #FDD835; color: #222; }
+.p-id .pstage { background: #26C6DA; color: #08323a; }
+.p-ex .pstage { background: #E53935; }
+.p-mem .pstage { background: #43A047; }
+.p-wb .pstage { background: #D81B60; }
+.pocc { font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.72rem; padding: 5px 7px; color: rgba(var(--bs-body-color-rgb), 0.9); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pbox.stl .pocc { color: #1E88E5; font-weight: 700; }
+.punit { opacity: 0.85; }
 .cyc-student-hint {
     font-size: 0.72rem; margin: 0; color: rgba(var(--bs-primary-rgb), 1);
     background: rgba(var(--bs-primary-rgb), 0.08);

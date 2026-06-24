@@ -24,7 +24,7 @@ import type { DatapathTrace } from "./datapathTrace.mts";
 export type PipeUnit = "alu" | "mul" | "fpu" | "div";
 
 /** Stall categories drawn on the grid (núcleo). */
-export type StallKind = "RAW" | "Str";
+export type StallKind = "RAW" | "WAW" | "WAR" | "Str";
 
 /** One executed instruction, normalised for scheduling (ISA-agnostic). */
 export interface PipeInstr {
@@ -50,8 +50,9 @@ export interface PipelineConfig {
     fpAddLatency: number; // FP adder pipeline depth (A1..An)
     mulLatency: number; // multiplier pipeline depth (M1..Mn)
     divLatency: number; // divider latency (non-pipelined DIV)
-    /** Reserved for the next batch (inert in the núcleo). */
+    /** Branch Target Buffer: predict-taken for branches already seen taken. */
     btb?: boolean;
+    /** Delay slot: the instruction after a branch always issues (hides 1 penalty cycle). */
     delaySlot?: boolean;
 }
 
@@ -87,8 +88,11 @@ export interface PipelineStats {
     instructions: number;
     cpi: number;
     rawStalls: number;
+    wawStalls: number;
+    warStalls: number;
     structStalls: number;
     branchTakenStalls: number;
+    branchMispredStalls: number;
     codeSize: number;
 }
 
@@ -191,14 +195,19 @@ export function schedulePipeline(
 ): PipelineSchedule {
     const rows: PipeRow[] = [];
     const regReady = new Map<string, number>(); // earliest cycle a consumer's EX can use the value
+    const pendingWrite = new Map<string, number>(); // last writer's WB cycle per register (for WAW)
     const wbBusy = new Set<number>();
+    const btbSet = new Set<string>(); // branch PCs seen taken (Branch Target Buffer)
     const pcs = new Set<string>();
     let divFreeAt = 0;
     let nextIf = 1;
     let maxCycle = 0;
     let rawStalls = 0;
+    let wawStalls = 0;
+    let warStalls = 0; // not produced by an in-order single-issue pipeline; kept for parity
     let structStalls = 0;
     let branchTakenStalls = 0;
+    let branchMispredStalls = 0;
 
     for (const instr of instrs) {
         pcs.add(instr.pc);
@@ -237,6 +246,22 @@ export function schedulePipeline(
 
         const stages = exStages(instr.unit, cfg);
         const lat = stages.length;
+
+        // WAW hazard: keep write-back in program order when a later (shorter) op
+        // would otherwise commit before an earlier in-flight writer of the same reg.
+        for (const w of instr.writes) {
+            const prev = pendingWrite.get(w);
+            if (prev == null) continue;
+            const minExStart = prev - lat; // so this WB (exStart+lat+1) > prev
+            if (minExStart > exStart) {
+                wawStalls += minExStart - exStart;
+                exStart = minExStart;
+                stallKind = "WAW";
+                waitFor = w;
+                readyCycle = prev;
+            }
+        }
+
         const exEnd = exStart + lat - 1;
         if (instr.unit === "div") divFreeAt = exEnd + 1;
 
@@ -258,6 +283,7 @@ export function schedulePipeline(
             // keep the latest writer's readiness
             const prev = regReady.get(w);
             regReady.set(w, prev != null ? Math.max(prev, ready) : ready);
+            pendingWrite.set(w, wbCycle);
         }
 
         // Build the row cells.
@@ -278,12 +304,25 @@ export function schedulePipeline(
         maxCycle = Math.max(maxCycle, wbCycle);
 
         // Next fetch: propagate stalls upstream (younger instr waits in IF while
-        // this one stalls in ID), and apply the taken-branch penalty.
+        // this one stalls in ID), then apply the branch penalty (resolved in EX).
         let nf = Math.max(ifCycle + 1, exStart - 1);
-        if (instr.isBranch && instr.branchTaken) {
-            const penalty = exEnd + 1 - nf;
-            if (penalty > 0) branchTakenStalls += penalty;
-            nf = Math.max(nf, exEnd + 1);
+        if (instr.isBranch) {
+            const predicted = !!cfg.btb && btbSet.has(instr.pc);
+            let penalty = 0;
+            let mispred = false;
+            if (instr.branchTaken) {
+                penalty = predicted ? 0 : 2; // BTB correct-taken = 0; else flush
+                btbSet.add(instr.pc);
+            } else if (predicted) {
+                penalty = 2; // predicted taken but fell through → misprediction
+                mispred = true;
+            }
+            if (cfg.delaySlot && penalty > 0) penalty -= 1; // delay slot hides one bubble
+            if (penalty > 0) {
+                if (mispred) branchMispredStalls += penalty;
+                else branchTakenStalls += penalty;
+                nf += penalty;
+            }
         }
         nextIf = nf;
     }
@@ -295,8 +334,11 @@ export function schedulePipeline(
         instructions,
         cpi: instructions > 0 ? cycles / instructions : 0,
         rawStalls,
+        wawStalls,
+        warStalls,
         structStalls,
         branchTakenStalls,
+        branchMispredStalls,
         codeSize: pcs.size,
     };
     return { rows, stats, maxCycle };
