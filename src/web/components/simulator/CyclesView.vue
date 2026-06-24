@@ -247,6 +247,12 @@ export default defineComponent({
                 <span class="lg c-mem">MEM</span><span class="lg c-wb">WB</span><span class="lg c-stall">stall</span>
             </div>
 
+            <p class="cyc-cap">
+                One row per <b>executed instruction</b> — each <b>Step</b> runs one full instruction and the grid grows.
+                Rows overlap like a real pipeline: instruction <i>i</i>+1 is fetched (IF) while <i>i</i> is decoding (ID).
+                A lone instruction takes 5 cycles to drain the pipeline (CPI 5); CPI approaches 1 as more instructions overlap.
+            </p>
+
             <p v-if="studentMode" class="cyc-student-hint">
                 Student mode: each <b>stall</b> shows the register the instruction is waiting for — hover it to see in which cycle that value becomes available.
             </p>
@@ -331,6 +337,7 @@ export default defineComponent({
 .lg { font-size: 0.62rem; font-weight: 800; padding: 1px 7px; border-radius: 4px; color: #fff; }
 
 .cyc-trunc { font-size: 0.72rem; color: rgba(var(--bs-body-color-rgb), 0.6); margin: 0; }
+.cyc-cap { font-size: 0.72rem; color: rgba(var(--bs-body-color-rgb), 0.6); margin: 0; line-height: 1.4; }
 .cyc-student-hint {
     font-size: 0.72rem; margin: 0; color: rgba(var(--bs-primary-rgb), 1);
     background: rgba(var(--bs-primary-rgb), 0.08);
