@@ -36,6 +36,8 @@ import { instructions } from "@/core/assembler/assembler.mjs";
 import type { StackFrame } from "@/core/memory/StackTracker.mjs";
 import { creator_ga } from "@/core/utils/creator_ga.mjs";
 import { InterruptHandlerType } from "@/core/executor/InterruptManager.mjs";
+// UdL extension: record the executed-instruction stream for the cycles/pipeline view.
+import { startExecutionHistory } from "@/core/trace/executionHistory.mts";
 
 import SpinnerLoading from "./components/general/SpinnerLoading.vue";
 import SupportedBrowsers from "./components/general/SupportedBrowsers.vue";
@@ -402,6 +404,8 @@ export default {
     this.os = this.detect_os();
     this.browser = this.detect_browser();
     this.target_port = this.get_target_port();
+    // UdL: start recording the executed-instruction stream (cycles/pipeline view).
+    startExecutionHistory();
   },
 
   /************************

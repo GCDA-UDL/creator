@@ -32,6 +32,7 @@ import {
     signalMap,
 } from "@/core/trace/datapathTrace.mts";
 import DatapathSchematic from "./DatapathSchematic.vue";
+import CyclesView from "./CyclesView.vue";
 import { architecture } from "@/core/core.mjs";
 
 interface DpBlock {
@@ -42,7 +43,7 @@ interface DpBlock {
 }
 
 export default defineComponent({
-    components: { DatapathSchematic },
+    components: { DatapathSchematic, CyclesView },
 
     props: {
         dark: { type: Boolean, default: false },
@@ -51,7 +52,7 @@ export default defineComponent({
     data() {
         return {
             trace: null as DatapathTrace | null,
-            mode: "blocks" as "blocks" | "schematic",
+            mode: "blocks" as "blocks" | "schematic" | "cycles",
         };
     },
 
@@ -133,10 +134,14 @@ export default defineComponent({
             <div class="dp-modes">
                 <button class="dp-mode-btn" :class="{ active: mode === 'blocks' }" @click="mode = 'blocks'">Blocks</button>
                 <button class="dp-mode-btn" :class="{ active: mode === 'schematic' }" @click="mode = 'schematic'">Schematic</button>
+                <button class="dp-mode-btn" :class="{ active: mode === 'cycles' }" @click="mode = 'cycles'">Cycles</button>
             </div>
 
             <!-- Drawn schematic (per-architecture, data-driven) -->
             <DatapathSchematic v-if="mode === 'schematic'" :trace="trace" :plugin="plugin" :custom-spec="customSpec" />
+
+            <!-- Pipeline cycle timeline (WinMIPS64-style) -->
+            <CyclesView v-else-if="mode === 'cycles'" :dark="dark" />
 
             <!-- Block view (generic, any architecture) -->
             <template v-else>
