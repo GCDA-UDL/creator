@@ -94,6 +94,27 @@ describe("schedulePipeline — núcleo", () => {
         expect(s.stats.branchTakenStalls).toBe(0);
     });
 
+    it("RAW stall cell records the awaited register and its ready cycle", () => {
+        const s = schedulePipeline(
+            [I({ isLoad: true, mnemonic: "lw", writes: ["x1"] }), I({ reads: ["x1"], writes: ["x2"] })],
+            cfg({ forwarding: true }),
+        );
+        const stall = s.rows[1].cells.find(c => c.stalled);
+        expect(stall).toBeTruthy();
+        expect(stall!.stallKind).toBe("RAW");
+        expect(stall!.waitFor).toBe("x1");
+        expect(typeof stall!.readyCycle).toBe("number");
+    });
+
+    it("structural stall cell points at the divider", () => {
+        const s = schedulePipeline(
+            [I({ unit: "div", mnemonic: "div", writes: ["x1"] }), I({ unit: "div", mnemonic: "div", writes: ["x4"] })],
+            cfg({ divLatency: 4 }),
+        );
+        const stall = s.rows[1].cells.find(c => c.stallKind === "Str");
+        expect(stall?.waitFor).toBe("divider");
+    });
+
     it("empty stream → zeroed stats", () => {
         const s = schedulePipeline([], cfg());
         expect(s.stats.cycles).toBe(0);

@@ -48,7 +48,9 @@ export default defineComponent({
             config: { ...DEFAULTS } as CyclesConfig,
             version: 0, // bumped on each trace/reset to recompute the schedule
             showConfig: false,
+            studentMode: false,
             presets: PRESETS,
+            tip: { show: false, text: "", x: 0, y: 0 },
         };
     },
     mounted() {
@@ -60,6 +62,7 @@ export default defineComponent({
         }
         (coreEvents as any).on(DATAPATH_TRACE_EVENT, this.onChange);
         (coreEvents as any).on("registers-reset", this.onChange);
+        this.$nextTick(() => this.scrollRight());
     },
     beforeUnmount() {
         (coreEvents as any).off(DATAPATH_TRACE_EVENT, this.onChange);
@@ -76,12 +79,23 @@ export default defineComponent({
                 }
             },
         },
+        displayMaxCycle() {
+            // keep the most recent cycles in view as the timeline grows
+            this.$nextTick(() => this.scrollRight());
+        },
     },
     computed: {
         schedule(): PipelineSchedule {
             // touch `version` so the (impure) history read recomputes on new traces
             void this.version;
-            const cfg: PipelineConfig = { ...DEFAULT_PIPELINE_CONFIG, ...this.config };
+            // read each config field explicitly so the computed tracks them all
+            const cfg: PipelineConfig = {
+                ...DEFAULT_PIPELINE_CONFIG,
+                forwarding: this.config.forwarding,
+                fpAddLatency: this.config.fpAddLatency,
+                mulLatency: this.config.mulLatency,
+                divLatency: this.config.divLatency,
+            };
             const instrs = getExecutionHistory().map((t, i) => buildPipeInstr(t, i));
             return schedulePipeline(instrs, cfg);
         },
@@ -119,6 +133,24 @@ export default defineComponent({
         onChange() {
             this.version++;
         },
+        scrollRight() {
+            const el = this.$refs.scroller as HTMLElement | undefined;
+            if (el) el.scrollLeft = el.scrollWidth;
+        },
+        stallTitle(cell: { stallKind?: string; waitFor?: string; readyCycle?: number }): string {
+            if (cell.stallKind === "Str") {
+                return cell.readyCycle != null
+                    ? `Structural stall — divider busy, free in cycle ${cell.readyCycle}`
+                    : "Structural stall";
+            }
+            if (cell.waitFor) {
+                return (
+                    `RAW stall — waiting for ${cell.waitFor}` +
+                    (cell.readyCycle != null ? ` (ready in cycle ${cell.readyCycle})` : "")
+                );
+            }
+            return "Stall";
+        },
         applyPreset(name: string) {
             const p = PRESETS[name];
             if (p) this.config = { ...p };
@@ -140,6 +172,18 @@ export default defineComponent({
             if (stage[0] === "A") return "c-fpadd";
             return "";
         },
+        showTip(ev: MouseEvent, cell: { stallKind?: string; waitFor?: string; readyCycle?: number }) {
+            this.tip = { show: true, text: this.stallTitle(cell), x: ev.clientX, y: ev.clientY };
+        },
+        moveTip(ev: MouseEvent) {
+            if (this.tip.show) {
+                this.tip.x = ev.clientX;
+                this.tip.y = ev.clientY;
+            }
+        },
+        hideTip() {
+            this.tip.show = false;
+        },
     },
 });
 </script>
@@ -150,6 +194,9 @@ export default defineComponent({
         <div class="cyc-toolbar">
             <button class="cyc-gear" :class="{ active: showConfig }" title="Pipeline configuration" @click="showConfig = !showConfig">
                 <font-awesome-icon :icon="['fas', 'gear']" /> Pipeline config
+            </button>
+            <button class="cyc-gear" :class="{ active: studentMode }" title="Student mode: stalls show which register is awaited and when" @click="studentMode = !studentMode">
+                <font-awesome-icon :icon="['fas', 'graduation-cap']" /> Student
             </button>
             <span class="cyc-hint">Recomputes instantly — no re-run needed.</span>
         </div>
@@ -200,10 +247,13 @@ export default defineComponent({
                 <span class="lg c-mem">MEM</span><span class="lg c-wb">WB</span><span class="lg c-stall">stall</span>
             </div>
 
+            <p v-if="studentMode" class="cyc-student-hint">
+                Student mode: each <b>stall</b> shows the register the instruction is waiting for — hover it to see in which cycle that value becomes available.
+            </p>
             <p v-if="truncated" class="cyc-trunc">Showing the first {{ gridRows.length }} of {{ schedule.rows.length }} instructions.</p>
 
             <!-- Instruction × cycle grid -->
-            <div class="cyc-scroll">
+            <div class="cyc-scroll" ref="scroller">
                 <table class="cyc-grid">
                     <thead>
                         <tr>
@@ -219,8 +269,10 @@ export default defineComponent({
                                     <div
                                         v-if="cellAt(gr, c).stalled"
                                         class="stg c-stall"
-                                        :title="'Stall: ' + cellAt(gr, c).stallKind"
-                                    >{{ cellAt(gr, c).stallKind }}</div>
+                                        @mouseenter="showTip($event, cellAt(gr, c))"
+                                        @mousemove="moveTip($event)"
+                                        @mouseleave="hideTip"
+                                    >{{ studentMode && cellAt(gr, c).waitFor ? cellAt(gr, c).waitFor : cellAt(gr, c).stallKind }}</div>
                                     <div v-else class="stg" :class="stageClass(cellAt(gr, c).stage)">{{ cellAt(gr, c).stage }}</div>
                                 </template>
                             </td>
@@ -229,6 +281,9 @@ export default defineComponent({
                 </table>
             </div>
         </template>
+
+        <!-- Floating stall explanation (on hover) -->
+        <div v-if="tip.show" class="cyc-tip" :style="{ left: tip.x + 14 + 'px', top: tip.y + 14 + 'px' }">{{ tip.text }}</div>
     </div>
 </template>
 
@@ -276,6 +331,20 @@ export default defineComponent({
 .lg { font-size: 0.62rem; font-weight: 800; padding: 1px 7px; border-radius: 4px; color: #fff; }
 
 .cyc-trunc { font-size: 0.72rem; color: rgba(var(--bs-body-color-rgb), 0.6); margin: 0; }
+.cyc-student-hint {
+    font-size: 0.72rem; margin: 0; color: rgba(var(--bs-primary-rgb), 1);
+    background: rgba(var(--bs-primary-rgb), 0.08);
+    border: 1px solid rgba(var(--bs-primary-rgb), 0.25);
+    border-radius: 6px; padding: 6px 9px;
+}
+.cyc-grid .stg { white-space: nowrap; }
+.c-stall { cursor: help; }
+.cyc-tip {
+    position: fixed; z-index: 1080; pointer-events: none;
+    max-width: 260px; padding: 6px 9px; border-radius: 6px;
+    background: #0b1020; color: #fff; font-size: 0.72rem; line-height: 1.35;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
 
 .cyc-scroll { overflow: auto; max-height: 60vh; border: 1px solid rgba(0, 0, 0, 0.1); border-radius: 8px; }
 .cyc-grid { border-collapse: collapse; font-family: ui-monospace, "Cascadia Code", monospace; }

@@ -61,12 +61,17 @@ test.describe("Cycle timeline (pipeline)", () => {
         const withFwd = await cyclesCount(page);
         // Open config and disable forwarding (no program re-run).
         await page.getByRole("button", { name: /Pipeline config/ }).click();
-        await page.getByText("Enable forwarding").click(); // toggles the checkbox via its label
-        await page.waitForTimeout(150);
+        await page.locator('.cyc-settings input[type="checkbox"]').first().uncheck();
+        await page.waitForTimeout(200);
         const noFwd = await cyclesCount(page);
 
-        // Without forwarding the schedule cannot have fewer cycles.
-        expect(noFwd).toBeGreaterThanOrEqual(withFwd);
+        // Without forwarding the schedule has more cycles (RAW stalls appear).
+        expect(noFwd).toBeGreaterThan(withFwd);
+
+        // Hovering a stall shows the explanation (which register, and when ready).
+        const stall = page.locator(".cyc-grid .c-stall").first();
+        await stall.hover();
+        await expect(page.locator(".cyc-tip")).toContainText(/waiting for|divider/);
     });
 
     test("RISC-V (RV32IMFD) renders the cycle timeline", async ({ page }) => {

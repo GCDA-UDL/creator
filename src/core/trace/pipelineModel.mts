@@ -69,6 +69,10 @@ export interface PipeCell {
     stage: string; // "IF" | "ID" | "EX" | "M1".. | "A1".. | "DIV" | "MEM" | "WB" | "" (stall)
     stalled: boolean;
     stallKind?: StallKind;
+    /** For a stall: what the instruction is waiting for (register name or "divider"). */
+    waitFor?: string;
+    /** For a stall: the cycle in which that value/resource becomes available. */
+    readyCycle?: number;
 }
 
 export interface PipeRow {
@@ -97,40 +101,55 @@ export interface PipelineSchedule {
 /** True for the architectural zero register across the ISAs CREATOR ships. */
 export function isZeroReg(name: string): boolean {
     const n = String(name).trim().toLowerCase();
-    return n === "x0" || n === "$zero" || n === "zero" || n === "$0" || n === "r0";
+    return n === "x0" || n === "$zero" || n === "zero" || n === "$0" || n === "r0" || n === "0";
 }
 
-const REG_ROLE = /^(rd|rs1|rs2|rs3|rs|rt)$/;
+/** Register operand keys (RISC-V rd/rs1/rs2, MIPS rs/rt/rd, generic reg1/reg2…). */
+const REG_KEY = /^(rd|rs1|rs2|rs3|rs|rt|reg\d+)$/;
+const LOAD_RE = /^(l[bhwd]u?|ld|ll|lwl|lwr|lwc\d|ldc\d|fl[wd])$/;
+const STORE_RE = /^(s[bhwd]|sc|swl|swr|swc\d|sdc\d|fs[wd])$/;
+const BRANCH_RE = /^(b[a-z0-9]*|j|jr|jal|jalr)$/;
 
-/** Builds a normalised `PipeInstr` from a per-instruction `DatapathTrace`. */
+/**
+ * Builds a normalised `PipeInstr` from a per-instruction `DatapathTrace`.
+ *
+ * ISA-agnostic and signal-independent: CREATOR types many MIPS instructions as
+ * "Other" (so the datapath signals are all zero) and names operands generically
+ * (reg1/reg2/val), so hazards are derived from the operand roles + the mnemonic:
+ *   - load/store/branch are recognised by the mnemonic;
+ *   - for everything else the FIRST register operand is the destination and the
+ *     rest are sources (the assembly/decode convention is destination-first);
+ *   - stores/branches have no destination (all registers are sources).
+ */
 export function buildPipeInstr(trace: DatapathTrace, index: number): PipeInstr {
     const operands: Record<string, string> = trace.operands ?? {};
-    const signals: Record<string, number | string> = trace.signals ?? {};
-    const format = trace.format;
     const mnemonic = (trace.asm ?? "").trim().split(/\s+/)[0]?.toLowerCase() ?? "";
 
     // Refine the execution unit: the datapath trace lumps divides under "mul" / "fpu".
     let unit: PipeUnit = (trace.unit as PipeUnit) ?? "alu";
     if (/^f?(div|rem)/.test(mnemonic) || mnemonic.includes("sqrt")) unit = "div";
 
-    const regWrite = Number(signals.RegWrite ?? 0) > 0;
-    // Destination role: rd if present, else rt (MIPS I-type / loads write rt).
-    let dest: string | null = null;
-    if (regWrite && operands.rd != null) dest = "rd";
-    else if (regWrite && operands.rt != null) dest = "rt";
+    const isLoad = LOAD_RE.test(mnemonic);
+    const isStore = STORE_RE.test(mnemonic);
+    const isBranch = BRANCH_RE.test(mnemonic);
 
-    const writes: string[] = [];
-    if (dest && operands[dest] && !isZeroReg(operands[dest])) writes.push(operands[dest]);
-
-    const reads: string[] = [];
+    // Register operands in decode (assembly) order.
+    const regs: string[] = [];
     for (const key of Object.keys(operands)) {
-        if (!REG_ROLE.test(key) || key === dest) continue;
+        if (!REG_KEY.test(key)) continue;
         const v = operands[key];
-        if (v && !isZeroReg(v)) reads.push(v);
+        if (v != null && v !== "") regs.push(String(v));
     }
 
-    const isBranch =
-        Number(signals.Branch ?? 0) > 0 || format === "B" || format === "J";
+    let writes: string[] = [];
+    let reads: string[] = [];
+    if (isStore || isBranch) {
+        reads = regs.filter(r => !isZeroReg(r));
+    } else if (regs.length > 0) {
+        const dest = regs[0];
+        if (!isZeroReg(dest)) writes = [dest];
+        reads = regs.slice(1).filter(r => !isZeroReg(r));
+    }
 
     return {
         index,
@@ -141,8 +160,8 @@ export function buildPipeInstr(trace: DatapathTrace, index: number): PipeInstr {
         unit,
         reads,
         writes,
-        isLoad: Number(signals.MemRead ?? 0) > 0,
-        isStore: Number(signals.MemWrite ?? 0) > 0,
+        isLoad,
+        isStore,
         isBranch,
         branchTaken: trace.branchTaken === true,
     };
@@ -187,21 +206,33 @@ export function schedulePipeline(
         const idCycle = ifCycle + 1;
         let exStart = idCycle + 1;
         let stallKind: StallKind | undefined;
+        let waitFor: string | undefined;
+        let readyCycle: number | undefined;
 
-        // RAW hazard: wait until every source operand is ready.
+        // RAW hazard: wait until the latest-ready source operand is available.
+        let rawReady = exStart;
+        let rawReg: string | undefined;
         for (const r of instr.reads) {
             const ready = regReady.get(r);
-            if (ready != null && ready > exStart) {
-                rawStalls += ready - exStart;
-                exStart = ready;
-                stallKind = "RAW";
+            if (ready != null && ready > rawReady) {
+                rawReady = ready;
+                rawReg = r;
             }
+        }
+        if (rawReady > exStart) {
+            rawStalls += rawReady - exStart;
+            exStart = rawReady;
+            stallKind = "RAW";
+            waitFor = rawReg;
+            readyCycle = rawReady;
         }
         // Structural hazard: non-pipelined divider busy.
         if (instr.unit === "div" && divFreeAt > exStart) {
             structStalls += divFreeAt - exStart;
             exStart = divFreeAt;
             stallKind = "Str";
+            waitFor = "divider";
+            readyCycle = divFreeAt;
         }
 
         const stages = exStages(instr.unit, cfg);
@@ -235,7 +266,7 @@ export function schedulePipeline(
             { cycle: idCycle, stage: "ID", stalled: false },
         ];
         for (let c = idCycle + 1; c < exStart; c++) {
-            cells.push({ cycle: c, stage: "", stalled: true, stallKind: stallKind ?? "RAW" });
+            cells.push({ cycle: c, stage: "", stalled: true, stallKind: stallKind ?? "RAW", waitFor, readyCycle });
         }
         for (let i = 0; i < lat; i++) {
             cells.push({ cycle: exStart + i, stage: stages[i], stalled: false });
