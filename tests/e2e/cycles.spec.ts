@@ -74,6 +74,24 @@ test.describe("Cycle timeline (pipeline)", () => {
         await expect(page.locator(".cyc-tip")).toContainText(/waiting for|divider/);
     });
 
+    test("cycle-by-cycle cursor reveals the pipeline progressively", async ({ page }) => {
+        await selectArchitecture(page, "MIPS-32");
+        await loadFirstExampleAndRun(page);
+        await openCycles(page);
+
+        const allCells = await page.locator(".cyc-grid .stg").count();
+        // step the cursor back several cycles → fewer cells revealed
+        const prev = page.getByRole("button", { name: "◀" });
+        for (let i = 0; i < 5; i++) await prev.click();
+        const fewer = await page.locator(".cyc-grid .stg").count();
+        expect(fewer).toBeLessThan(allCells);
+        // the current-cycle column is highlighted
+        expect(await page.locator(".cyc-grid .stg.now").count()).toBeGreaterThan(0);
+        // back to live restores the full timeline
+        await page.getByRole("button", { name: "Live" }).click();
+        expect(await page.locator(".cyc-grid .stg").count()).toBe(allCells);
+    });
+
     test("RISC-V (RV32IMFD) renders the cycle timeline", async ({ page }) => {
         await selectArchitecture(page, "RISC-V (RV32IMFD)");
         await loadFirstExampleAndRun(page);

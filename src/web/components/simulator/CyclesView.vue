@@ -51,6 +51,8 @@ export default defineComponent({
             studentMode: false,
             presets: PRESETS,
             tip: { show: false, text: "", x: 0, y: 0 },
+            cursor: 1, // manual cycle cursor (used when not live)
+            live: true, // follow the latest executed cycle
         };
     },
     mounted() {
@@ -80,8 +82,10 @@ export default defineComponent({
             },
         },
         displayMaxCycle() {
-            // keep the most recent cycles in view as the timeline grows
-            this.$nextTick(() => this.scrollRight());
+            // in live mode keep the most recent cycles in view as the timeline grows
+            this.$nextTick(() => {
+                if (this.live) this.scrollRight();
+            });
         },
     },
     computed: {
@@ -122,6 +126,12 @@ export default defineComponent({
         cycleCols(): number[] {
             return Array.from({ length: this.displayMaxCycle }, (_, i) => i + 1);
         },
+        /** The cycle the cursor is on: follows the latest cycle in "live" mode. */
+        cursorCycle(): number {
+            const max = this.displayMaxCycle;
+            if (max <= 0) return 0;
+            return this.live ? max : Math.min(Math.max(this.cursor, 1), max);
+        },
         stats() {
             return this.schedule.stats;
         },
@@ -136,6 +146,22 @@ export default defineComponent({
         scrollRight() {
             const el = this.$refs.scroller as HTMLElement | undefined;
             if (el) el.scrollLeft = el.scrollWidth;
+        },
+        scrollToCursor() {
+            const el = this.$refs.scroller as HTMLElement | undefined;
+            if (!el || this.displayMaxCycle <= 0) return;
+            const frac = this.cursorCycle / this.displayMaxCycle;
+            el.scrollLeft = frac * (el.scrollWidth - el.clientWidth);
+        },
+        stepCursor(delta: number) {
+            const base = this.cursorCycle;
+            this.live = false;
+            this.cursor = Math.min(Math.max(base + delta, 1), this.displayMaxCycle);
+            this.$nextTick(() => this.scrollToCursor());
+        },
+        goLive() {
+            this.live = true;
+            this.$nextTick(() => this.scrollRight());
         },
         stallTitle(cell: { stallKind?: string; waitFor?: string; readyCycle?: number }): string {
             if (cell.stallKind === "Str") {
@@ -258,28 +284,39 @@ export default defineComponent({
             </p>
             <p v-if="truncated" class="cyc-trunc">Showing the first {{ gridRows.length }} of {{ schedule.rows.length }} instructions.</p>
 
+            <!-- Cycle-by-cycle cursor (WinMIPS64-style: advance one clock at a time) -->
+            <div class="cyc-cursor">
+                <span class="cyc-cursor-lbl">Cycle step</span>
+                <button class="cyc-cbtn" :disabled="cursorCycle <= 1" title="Previous cycle" @click="stepCursor(-1)">◀</button>
+                <span class="cyc-cnow">{{ cursorCycle }} / {{ displayMaxCycle }}</span>
+                <button class="cyc-cbtn" :disabled="cursorCycle >= displayMaxCycle" title="Next cycle" @click="stepCursor(1)">▶</button>
+                <button class="cyc-cbtn cyc-clive" :class="{ active: live }" title="Follow the latest cycle" @click="goLive">Live</button>
+                <span class="cyc-cursor-hint">advance one clock and watch the pipeline fill</span>
+            </div>
+
             <!-- Instruction × cycle grid -->
             <div class="cyc-scroll" ref="scroller">
                 <table class="cyc-grid">
                     <thead>
                         <tr>
                             <th class="cyc-corner">Instruction</th>
-                            <th v-for="c in cycleCols" :key="'h' + c" class="cyc-cnum">{{ c }}</th>
+                            <th v-for="c in cycleCols" :key="'h' + c" class="cyc-cnum" :class="{ now: c === cursorCycle }">{{ c }}</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-for="(gr, ri) in gridRows" :key="ri">
                             <th class="cyc-asm">{{ gr.instr.asm }}</th>
                             <td v-for="c in cycleCols" :key="ri + '-' + c" class="cyc-cell">
-                                <template v-if="cellAt(gr, c)">
+                                <template v-if="cellAt(gr, c) && c <= cursorCycle">
                                     <div
                                         v-if="cellAt(gr, c).stalled"
                                         class="stg c-stall"
+                                        :class="{ now: c === cursorCycle }"
                                         @mouseenter="showTip($event, cellAt(gr, c))"
                                         @mousemove="moveTip($event)"
                                         @mouseleave="hideTip"
                                     >{{ studentMode && cellAt(gr, c).waitFor ? cellAt(gr, c).waitFor : cellAt(gr, c).stallKind }}</div>
-                                    <div v-else class="stg" :class="stageClass(cellAt(gr, c).stage)">{{ cellAt(gr, c).stage }}</div>
+                                    <div v-else class="stg" :class="[stageClass(cellAt(gr, c).stage), { now: c === cursorCycle }]">{{ cellAt(gr, c).stage }}</div>
                                 </template>
                             </td>
                         </tr>
@@ -338,6 +375,22 @@ export default defineComponent({
 
 .cyc-trunc { font-size: 0.72rem; color: rgba(var(--bs-body-color-rgb), 0.6); margin: 0; }
 .cyc-cap { font-size: 0.72rem; color: rgba(var(--bs-body-color-rgb), 0.6); margin: 0; line-height: 1.4; }
+
+/* Cycle cursor controls */
+.cyc-cursor { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cyc-cursor-lbl { font-size: 0.72rem; font-weight: 700; color: rgba(var(--bs-body-color-rgb), 0.8); }
+.cyc-cbtn {
+    border: 1px solid rgba(var(--bs-secondary-rgb), 0.4); background: rgba(var(--bs-secondary-rgb), 0.1);
+    color: rgba(var(--bs-body-color-rgb), 0.9); border-radius: 4px; padding: 2px 10px; cursor: pointer;
+    font-weight: 700; font-size: 0.8rem; line-height: 1.2;
+}
+.cyc-cbtn:hover:not(:disabled) { background: rgba(var(--bs-primary-rgb), 0.15); color: rgba(var(--bs-primary-rgb), 1); }
+.cyc-cbtn:disabled { opacity: 0.4; cursor: default; }
+.cyc-clive.active { background: rgba(var(--bs-primary-rgb), 0.85); color: #fff; border-color: transparent; }
+.cyc-cnow { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 56px; text-align: center; font-size: 0.78rem; }
+.cyc-cursor-hint { font-size: 0.7rem; color: rgba(var(--bs-body-color-rgb), 0.55); font-style: italic; }
+.stg.now { outline: 2px solid rgba(var(--bs-body-color-rgb), 0.85); outline-offset: -2px; filter: brightness(1.1); }
+.cyc-cnum.now { color: rgba(var(--bs-primary-rgb), 1); font-weight: 800; }
 .cyc-student-hint {
     font-size: 0.72rem; margin: 0; color: rgba(var(--bs-primary-rgb), 1);
     background: rgba(var(--bs-primary-rgb), 0.08);
