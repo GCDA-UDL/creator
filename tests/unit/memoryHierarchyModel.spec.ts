@@ -5,6 +5,7 @@
 import { describe, it, expect } from "vitest";
 import {
     simulateCache,
+    simulateMultilevel,
     cacheGeometry,
     DEFAULT_CACHE_CONFIG,
     type CacheConfig,
@@ -83,6 +84,31 @@ describe("simulateCache", () => {
         expect(t.stats.accesses).toBe(0);
         expect(t.stats.hitRate).toBe(0);
         expect(t.results).toHaveLength(0);
+    });
+});
+
+describe("simulateMultilevel (L1 + L2)", () => {
+    it("L2 catches blocks that thrash a tiny L1", () => {
+        const L1 = cfg({ mapping: "direct", numLines: 1, blockSize: 16, hitTime: 1 });
+        const L2 = cfg({ mapping: "fully", numLines: 4, blockSize: 16, hitTime: 10 });
+        const ml = simulateMultilevel(reads([0, 16, 0, 16]), [L1, L2], 100);
+        expect(ml.levels[0].stats.misses).toBe(4); // L1 (1 line) misses every time
+        expect(ml.levels[1].stats.hits).toBe(2); // L2 holds both blocks → 2 hits
+        expect(ml.amat).toBeLessThan(1 + 1 * 100); // better than L1→memory
+    });
+
+    it("single-level AMAT = h1 + missRate × memPenalty", () => {
+        const L1 = cfg({ mapping: "direct", numLines: 4, blockSize: 16, hitTime: 1 });
+        const ml = simulateMultilevel(reads([0, 0, 0, 0]), [L1], 20);
+        expect(ml.amat).toBeCloseTo(1 + 0.25 * 20, 5); // 6
+    });
+
+    it("two-level AMAT chains the local miss rates", () => {
+        const L1 = cfg({ mapping: "direct", numLines: 4, blockSize: 16, hitTime: 1 });
+        const L2 = cfg({ mapping: "fully", numLines: 4, blockSize: 16, hitTime: 10 });
+        const ml = simulateMultilevel(reads([0]), [L1, L2], 100);
+        // both miss once → AMAT = 1 + 1·(10 + 1·100) = 111
+        expect(ml.amat).toBeCloseTo(111, 5);
     });
 });
 

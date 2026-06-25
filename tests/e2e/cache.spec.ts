@@ -35,7 +35,7 @@ test.describe("Cache / memory hierarchy view", () => {
         await loadFirstExampleAndRun(page);
         await openCache(page);
 
-        await expect(page.locator(".cache-stats")).toContainText("Hit rate");
+        await expect(page.locator(".cache-stats")).toContainText("L1 hit rate");
         await expect(page.locator(".cache-stats")).toContainText("AMAT");
         await expect(page.locator(".cache-stats")).toContainText("Conflict");
         await expect(page.locator(".cache-grid")).toBeVisible();
@@ -57,5 +57,22 @@ test.describe("Cache / memory hierarchy view", () => {
         await expect(page.locator(".cache-grid")).toBeVisible();
         const setsAfter = await page.locator(".cache-grid tbody tr").count();
         expect(setsAfter).not.toBe(setsBefore);
+    });
+
+    test("L1+L2 and split I/D render", async ({ page }) => {
+        await selectArchitecture(page, "MIPS-32");
+        await loadFirstExampleAndRun(page);
+        await openCache(page);
+
+        await page.getByRole("button", { name: /Cache config/ }).click();
+        await page.getByText("Split I/D").click(); // toggle split instruction/data
+        await page.locator(".cache-settings select").nth(3).selectOption("2"); // Levels → L1 + L2
+        await page.waitForTimeout(150);
+
+        await expect(page.locator(".cache-stats")).toContainText("L2 hit rate");
+        await expect(page.locator(".cache-split")).toBeVisible(); // I-cache … D-cache summary
+        // switch the detailed grid to the instruction cache
+        await page.getByRole("button", { name: "Instr" }).click();
+        await expect(page.locator(".cache-grid")).toBeVisible();
     });
 });

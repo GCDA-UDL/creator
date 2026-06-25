@@ -96,6 +96,40 @@ export interface CacheTrace {
     finalSets: CacheLineState[][];
 }
 
+/** Result of replaying a stream through a multi-level hierarchy (L1 → L2 → … → memory). */
+export interface MultilevelTrace {
+    levels: CacheTrace[]; // one per cache level; levels[0] = L1 over the full stream
+    amat: number; // global average memory access time (cycles)
+}
+
+/**
+ * Replays an access stream through an ordered list of cache levels: each level's
+ * misses flow to the next; a final miss costs `memPenalty`. AMAT is computed from
+ * the per-level (local) miss rates: AMAT = h1 + m1·(h2 + m2·(… + mn·memPenalty)).
+ */
+export function simulateMultilevel(
+    accesses: { address: number; type: "read" | "write" }[],
+    levels: CacheConfig[],
+    memPenalty: number,
+): MultilevelTrace {
+    const traces: CacheTrace[] = [];
+    let stream = accesses;
+    for (const lvl of levels) {
+        const tr = simulateCache(stream, lvl);
+        traces.push(tr);
+        const next: { address: number; type: "read" | "write" }[] = [];
+        for (let i = 0; i < stream.length; i++) {
+            if (!tr.results[i].hit) next.push(stream[i]);
+        }
+        stream = next;
+    }
+    let penalty = memPenalty;
+    for (let i = levels.length - 1; i >= 0; i--) {
+        penalty = levels[i].hitTime + traces[i].stats.missRate * penalty;
+    }
+    return { levels: traces, amat: traces.length > 0 ? penalty : 0 };
+}
+
 const log2 = (n: number) => Math.max(0, Math.round(Math.log2(Math.max(1, n))));
 
 /** Effective geometry from the config (direct=1 way, fully=numLines ways). */
