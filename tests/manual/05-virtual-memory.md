@@ -1,5 +1,9 @@
 # 05 · Memoria virtual — TLB y paginación (modo *Virtual mem*)
 
+![Vista Virtual mem: traduccion VA->VPN/PFN, tablas TLB y paginas residentes, estadisticas](img/vmemory.png)
+
+> *Captura de referencia del simulador real (este plan describe que debe verse y por que).*
+
 Plan de **validación manual** del modo **Datapath → Virtual mem** de la extensión docente de CREATOR
 (RISC-V/MIPS, proyecto PID de la UdL). Sustituye, en la parte de memoria virtual, a las prácticas
 clásicas de paginación y TLB.
@@ -146,13 +150,15 @@ P1: beq  t1, t2, P1_end
     # --- 2a pasada: revisita las mismas 8 paginas ---
     la   t0, big
 P2: ...
-    lw   t3, 0(t0)            # revisita -> TLB hit / page-table hit
+    lw   t3, 0(t0)            # revisita -> TLB miss + page-table hit (sin fallo)
 ```
 
 **Diseño y por qué.** El **stride = 256 B = una página** garantiza que cada `lw` de la 1ª pasada cae en
-una **página distinta** → primer toque de 8 páginas nuevas. La 2ª pasada **revisita** esas mismas 8
-páginas en el mismo orden → permite observar **aciertos de TLB**, **aciertos de tabla de páginas** y, si
-la RAM es estrecha, **reaparición de fallos** (*thrashing*).
+una **página distinta** → primer toque de 8 páginas nuevas. La 2ª pasada **revisita** esas 8 páginas:
+con RAM=8 ya están residentes → **aciertos de tabla de páginas sin fallos**. Pero como son **8** páginas
+en recorrido secuencial y la **TLB sólo tiene 4** entradas, el TLB se **recicla** → **0 aciertos de TLB**
+(para ver aciertos de TLB está el ejemplo pequeño de **4** páginas, `Virtual mem 02 · Revisita`). Si
+además se estrecha la RAM (preset *Tight RAM*) reaparecen **fallos de página** (*thrashing*).
 
 ### Direcciones reales y descomposición VPN/offset
 
@@ -197,15 +203,19 @@ Esa base es múltiplo exacto de 256 (`0x200000 / 256 = 0x2000`), así que `big` 
 | 7 | Tras la 1ª pasada, leer fallos de página | (A) tile **Page faults** | **8** | Un fallo por cada una de las 8 páginas nuevas (caben todas en RAM=8). |
 | 8 | Mirar la tabla **Resident pages — RAM** al acabar la 1ª pasada | (D) tabla derecha | **8/8 frames**, VPN 8192..8199 ↔ PFN 0..7 | Las 8 páginas quedan residentes; no hubo expulsiones. |
 | 9 | Mirar la tabla **TLB** al acabar la 1ª pasada | (D) tabla izquierda | **4/4**, con las **4 últimas** VPN (8196..8199) | TLB de 4 entradas, LRU: solo sobreviven las 4 traducciones más recientes. |
-| 10 | Avanzar por los 8 accesos de la **2ª pasada** | (C) badges | **0** `PAGE FAULT`; aparecen `TLB hit` y `TLB miss + page-table hit` | RAM=8: todo residente → sin fallos. TLB=4: algunas VPN ya no están en TLB pero **sí** en RAM → *page-table hit*. |
+| 10 | Avanzar por los 8 accesos de la **2ª pasada** | (C) badges | **0** `PAGE FAULT`; los **8** son `TLB miss + page-table hit` (**0** `TLB hit`) | RAM=8: todo residente → sin fallos. Recorrido secuencial de 8 VPN con TLB=4 (LRU): cada página revisitada **ya fue expulsada** del TLB → el TLB se recicla y **no acierta** (equivale al fallo de *conflicto* en cache); la página sí está en RAM → *page-table hit*. |
 | 11 | Leer **Page faults** tras la 2ª pasada | (A) tile **Page faults** | sigue **8** (no aumenta) | No se expulsó nada; revisitar páginas residentes **no** causa fallo de página. |
-| 12 | Leer aciertos de TLB y de tabla de páginas de la 2ª pasada | (A) tiles **TLB hits** / **Page-table hits** | reparto entre *TLB hit* y *page-table hit* (conteo exacto **(verificar en la herramienta)**, depende del orden LRU del TLB) | Con TLB=4 sobre 8 páginas, no todas las revisitas aciertan en TLB; las que fallan en TLB aciertan en la tabla. |
-| 13 | Leer la **tasa de acierto de TLB** | (A) tile **TLB hit rate** | valor `%` (verificar); debe ser < 100 % por la mezcla de hits/misses | `tlbHitRate = TLB hits / Accesses`. |
+| 12 | Leer aciertos de TLB y de tabla de páginas | (A) tiles **TLB hits** / **Page-table hits** | **TLB hits = 0**, **Page-table hits = 8** | Recorrido secuencial de 8 VPN > TLB de 4: ninguna revisita encuentra su traducción en el TLB; todas aciertan en la tabla de páginas (residentes). |
+| 13 | Leer la **tasa de acierto de TLB** | (A) tile **TLB hit rate** | **0.0 %** | `tlbHitRate = TLB hits / Accesses = 0/16`. El recorrido secuencial no reutiliza ninguna entrada del TLB antes de expulsarla. |
 
-> **Nota sobre conteos de la 2ª pasada.** La herramienta usa una TLB **completamente asociativa** con
-> LRU. El número exacto de *TLB hit* frente a *page-table hit* en la 2ª pasada depende del estado LRU del
-> TLB al terminar la 1ª pasada, por eso se marca *(verificar en la herramienta)*. Lo **invariante** y
-> exigible es: **0 fallos de página** en la 2ª pasada y **8** acumulados en total.
+> **Reciclado del TLB (no es un fallo del simulador).** La TLB es completamente asociativa con LRU de
+> **4** entradas. Recorrer **8** páginas en orden secuencial expulsa cada traducción **antes** de
+> revisitarla → **0 aciertos de TLB** en la 2ª pasada (es el equivalente, en la TLB, al fallo de
+> **conflicto** de la cache). Lo **invariante y exigible**: **0 fallos de página** en la 2ª pasada y
+> **8** acumulados; **8** *page-table hits* en la 2ª pasada; **TLB hit rate = 0 %**.
+>
+> Para **ver aciertos de TLB**, carga el ejemplo pequeño **`Virtual mem 02 · Revisita`** (solo **4**
+> páginas, que **sí caben** en la TLB de 4): tras la 1ª vuelta, las revisitas dan `TLB hit`.
 
 ```mermaid
 sequenceDiagram

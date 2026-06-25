@@ -1,5 +1,9 @@
 # Plan de validación manual — Módulo PIPELINE / CICLOS (modo "Cycles")
 
+![Vista Cycles: rejilla instrucciones x ciclos, stalls RAW, CPI y tarjetas de estadisticas](img/pipeline.png)
+
+> *Captura de referencia del simulador real (este plan describe que debe verse y por que).*
+
 Vista **Datapath → Cycles** de CREATOR (extensión UdL, estilo WinMIPS64).
 Programa de prueba: `examples/udl-tests/pipeline/pipeline_completo.s`.
 

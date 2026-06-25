@@ -1,5 +1,9 @@
 # Plan de validación manual — Módulo CACHE / Jerarquía de memoria (modo "Cache", estilo SMPcache)
 
+![Vista Cache: estadisticas (hits/AMAT/3C), descomposicion TAG/INDICE/OFFSET y contenido de la cache](img/cache.png)
+
+> *Captura de referencia del simulador real (este plan describe que debe verse y por que).*
+
 ## Objetivo y destinatario
 
 Este documento permite a un **profesor de Arquitectura de Computadores de la UdL** validar, paso a

@@ -23,13 +23,14 @@ P1:
 P1_end:
 
     # --- 2a pasada: revisita las mismas paginas ---
-    #     RAM=8: ya residentes -> sin fallos. TLB=4: las 4 ultimas dan TLB hit;
-    #     las otras dan TLB miss + PAGE-TABLE hit (pagina presente, sin fallo).
+    #     RAM=8: ya residentes -> 0 fallos de pagina (page-table hit).
+    #     TLB=4 y 8 paginas en orden secuencial -> el TLB se recicla -> 0 TLB hit
+    #     (analogo al fallo de conflicto en cache; ver vm_02 con 4 paginas para TLB hit).
     la   t0, big
     li   t1, 0
 P2:
     beq  t1, t2, P2_end
-    lw   t3, 0(t0)            # revisita -> TLB hit / page-table hit
+    lw   t3, 0(t0)            # revisita -> TLB miss + page-table hit (sin fallo)
     addi t0, t0, 256
     addi t1, t1, 1
     j    P2

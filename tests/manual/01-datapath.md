@@ -1,5 +1,9 @@
 # Plan de pruebas manual — Vista DATAPATH (modo *Schematic*)
 
+![Vista Datapath (Schematic): etapas IF/ID/EX/MEM/WB, operandos rs1/rs2/rd y unidad MUL iluminada](img/datapath.png)
+
+> *Captura de referencia del simulador real (este plan describe que debe verse y por que).*
+
 > CREATOR · extensión UdL (proyecto PID RISC-V) · arquitectura **RISC-V (RV32IMFD)**
 > Programa de prueba: `examples/udl-tests/datapath/datapath_completo.s` · grupo de ejemplos **"UdL · Test Datapath"**
 

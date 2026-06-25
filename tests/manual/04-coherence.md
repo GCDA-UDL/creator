@@ -1,5 +1,9 @@
 # Plan de validación manual — Módulo COHERENCIA DE CACHÉ MULTIPROCESADOR (modo «Coherence»)
 
+![Vista Coherence: estados MESI por nucleo, registro de bus y estadisticas (ejemplo False sharing)](img/coherence.png)
+
+> *Captura de referencia del simulador real (este plan describe que debe verse y por que).*
+
 CREATOR (extensión UdL, PID RISC-V) · simulador de coherencia *snooping write-invalidate* (MESI/MSI) estilo SMPcaché multinúcleo.
 
 ---
