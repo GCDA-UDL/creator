@@ -28,6 +28,35 @@
     "description": "RISC-V (RV32IMFD, Interrupts) Devices Examples"
   },
 
+  {
+    "name": "UdL · Test Datapath",
+    "id": "udl-datapath",
+    "architecture": "RISC-V (RV32IMFD)",
+    "url": "examples/udl-tests/list-datapath.json",
+    "description": "UdL · programas para validar la vista Datapath"
+  },
+  {
+    "name": "UdL · Test Pipeline (Cycles)",
+    "id": "udl-pipeline",
+    "architecture": "RISC-V (RV32IMFD)",
+    "url": "examples/udl-tests/list-pipeline.json",
+    "description": "UdL · programas para validar la vista de ciclos/pipeline"
+  },
+  {
+    "name": "UdL · Test Cache",
+    "id": "udl-cache",
+    "architecture": "RISC-V (RV32IMFD)",
+    "url": "examples/udl-tests/list-cache.json",
+    "description": "UdL · programas para validar la jerarquia de cache"
+  },
+  {
+    "name": "UdL · Test Virtual memory",
+    "id": "udl-vmemory",
+    "architecture": "RISC-V (RV32IMFD)",
+    "url": "examples/udl-tests/list-vmemory.json",
+    "description": "UdL · programas para validar la memoria virtual (TLB/paginas)"
+  },
+
 
   {
     "name": "RISC-V (RV64IMFD) Examples",

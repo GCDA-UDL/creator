@@ -1,0 +1,6 @@
+[
+  { "name": "Virtual mem 01 · Paginacion", "id": "vm01", "url": "examples/udl-tests/vmemory/vm_01_paginacion.s", "description": "8 paginas nuevas — 8 faults" },
+  { "name": "Virtual mem 02 · Revisita (TLB)", "id": "vm02", "url": "examples/udl-tests/vmemory/vm_02_revisita.s", "description": "localidad -> TLB hits" },
+  { "name": "Virtual mem 03 · Thrashing", "id": "vm03", "url": "examples/udl-tests/vmemory/vm_03_thrashing.s", "description": "RAM ajustada -> hiperpaginacion" },
+  { "name": "Memoria virtual · paginacion y TLB", "id": "vmall", "url": "examples/udl-tests/vmemory/vmemory_completo.s", "description": "COMPLETO: 8 paginas + revisita" }
+]

@@ -1,0 +1,7 @@
+[
+  { "name": "Pipeline 01 · RAW (forwarding)", "id": "pp01", "url": "examples/udl-tests/pipeline/pp_01_raw.s", "description": "cadena de dependencias ALU-ALU" },
+  { "name": "Pipeline 02 · Load-use", "id": "pp02", "url": "examples/udl-tests/pipeline/pp_02_load_use.s", "description": "1 burbuja inevitable" },
+  { "name": "Pipeline 03 · Latencia mul", "id": "pp03", "url": "examples/udl-tests/pipeline/pp_03_mul.s", "description": "M1..M7, dependiente espera" },
+  { "name": "Pipeline 04 · Salto tomado", "id": "pp04", "url": "examples/udl-tests/pipeline/pp_04_salto.s", "description": "Branch-taken stalls" },
+  { "name": "Pipeline · riesgos (RAW/load-use/mul/branch)", "id": "ppall", "url": "examples/udl-tests/pipeline/pipeline_completo.s", "description": "COMPLETO: todos los riesgos juntos" }
+]

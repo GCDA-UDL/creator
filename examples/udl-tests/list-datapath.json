@@ -1,0 +1,10 @@
+[
+  { "name": "Datapath 01 · Aritmetica (I, R)", "id": "dp01", "url": "examples/udl-tests/datapath/dp_01_aritmetica.s", "description": "addi/add/sub — etapa EX, MUX ALU" },
+  { "name": "Datapath 02 · Logica y shifts", "id": "dp02", "url": "examples/udl-tests/datapath/dp_02_logica.s", "description": "and/or/xor/slli" },
+  { "name": "Datapath 03 · Multiplicador (M)", "id": "dp03", "url": "examples/udl-tests/datapath/dp_03_mul.s", "description": "mul/mulh — ilumina unidad MUL" },
+  { "name": "Datapath 04 · Memoria (load/store)", "id": "dp04", "url": "examples/udl-tests/datapath/dp_04_memoria.s", "description": "lw/sw — etapa MEM" },
+  { "name": "Datapath 05 · Saltos", "id": "dp05", "url": "examples/udl-tests/datapath/dp_05_salto.s", "description": "beq/bne/jal — ruta de salto" },
+  { "name": "Datapath 06 · Inmediato alto (U)", "id": "dp06", "url": "examples/udl-tests/datapath/dp_06_inmediato.s", "description": "lui/auipc — sin rs1" },
+  { "name": "Datapath 07 · FPU (doble)", "id": "dp07", "url": "examples/udl-tests/datapath/dp_07_fpu.s", "description": "fld/fadd.d/fmul.d — ilumina FPU" },
+  { "name": "Datapath · todos los formatos", "id": "dpall", "url": "examples/udl-tests/datapath/datapath_completo.s", "description": "COMPLETO: R/I/S/B/U/J + M + FPU (todo junto)" }
+]

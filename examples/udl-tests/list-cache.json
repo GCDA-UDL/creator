@@ -1,0 +1,7 @@
+[
+  { "name": "Cache 01 · Localidad espacial", "id": "ca01", "url": "examples/udl-tests/cache/ca_01_espacial.s", "description": "recorrido secuencial — 4 miss + 12 hit" },
+  { "name": "Cache 02 · Localidad temporal", "id": "ca02", "url": "examples/udl-tests/cache/ca_02_temporal.s", "description": "re-lectura — 1 miss + resto hit" },
+  { "name": "Cache 03 · Fallos de conflicto", "id": "ca03", "url": "examples/udl-tests/cache/ca_03_conflicto.s", "description": "3 bloques al mismo conjunto" },
+  { "name": "Cache 04 · Escrituras (WB)", "id": "ca04", "url": "examples/udl-tests/cache/ca_04_escritura.s", "description": "write-allocate + dirty + write-back" },
+  { "name": "Cache · localidad y conflicto", "id": "caall", "url": "examples/udl-tests/cache/cache_completo.s", "description": "COMPLETO: espacial + temporal + conflicto" }
+]
