@@ -25,6 +25,8 @@ import { sentinel } from "../sentinel/sentinel.mts";
 import { checkDeviceAddr, devices } from "../executor/devices.mts";
 import type { Memory } from "../memory/Memory.mts";
 import { toHex } from "../utils/utils.mjs";
+// UdL extension: publish data memory accesses for the cache/memory-hierarchy view.
+import { coreEvents } from "../events.mts";
 
 /*
  *  CREATOR instruction description API:
@@ -53,6 +55,14 @@ function writeValueToMemory(
         deviceID === null
             ? (main_memory as Memory)
             : devices.get(deviceID)!.memory;
+
+    // UdL: record the data store (main memory only) for the cache view.
+    if (deviceID === null) {
+        (coreEvents as unknown as { emit: (t: string, e: unknown) => void }).emit(
+            "memory-access",
+            { address, bytes, type: "write" },
+        );
+    }
 
     const wordSize = memory.getWordSize();
 
@@ -121,6 +131,14 @@ function readValueFromMemory(address: bigint, bytes: number): bigint {
         deviceID === null
             ? (main_memory as Memory)
             : devices.get(deviceID)!.memory;
+
+    // UdL: record the data load (main memory only) for the cache view.
+    if (deviceID === null) {
+        (coreEvents as unknown as { emit: (t: string, e: unknown) => void }).emit(
+            "memory-access",
+            { address, bytes, type: "read" },
+        );
+    }
 
     const wordSize = memory.getWordSize();
     if (bytes === 1) {

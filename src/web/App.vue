@@ -38,6 +38,8 @@ import { creator_ga } from "@/core/utils/creator_ga.mjs";
 import { InterruptHandlerType } from "@/core/executor/InterruptManager.mjs";
 // UdL extension: record the executed-instruction stream for the cycles/pipeline view.
 import { startExecutionHistory } from "@/core/trace/executionHistory.mts";
+// UdL extension: record the data memory-access stream for the cache view.
+import { startMemoryAccessHistory } from "@/core/trace/memoryAccessHistory.mts";
 
 import SpinnerLoading from "./components/general/SpinnerLoading.vue";
 import SupportedBrowsers from "./components/general/SupportedBrowsers.vue";
@@ -406,6 +408,8 @@ export default {
     this.target_port = this.get_target_port();
     // UdL: start recording the executed-instruction stream (cycles/pipeline view).
     startExecutionHistory();
+    // UdL: start recording the data memory-access stream (cache view).
+    startMemoryAccessHistory();
   },
 
   /************************
