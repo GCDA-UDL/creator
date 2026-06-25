@@ -33,6 +33,7 @@ import {
 } from "@/core/trace/datapathTrace.mts";
 import DatapathSchematic from "./DatapathSchematic.vue";
 import CyclesView from "./CyclesView.vue";
+import CacheView from "./CacheView.vue";
 import { architecture } from "@/core/core.mjs";
 
 interface DpBlock {
@@ -43,7 +44,7 @@ interface DpBlock {
 }
 
 export default defineComponent({
-    components: { DatapathSchematic, CyclesView },
+    components: { DatapathSchematic, CyclesView, CacheView },
 
     props: {
         dark: { type: Boolean, default: false },
@@ -52,7 +53,7 @@ export default defineComponent({
     data() {
         return {
             trace: null as DatapathTrace | null,
-            mode: "blocks" as "blocks" | "schematic" | "cycles",
+            mode: "blocks" as "blocks" | "schematic" | "cycles" | "cache",
         };
     },
 
@@ -135,6 +136,7 @@ export default defineComponent({
                 <button class="dp-mode-btn" :class="{ active: mode === 'blocks' }" @click="mode = 'blocks'">Blocks</button>
                 <button class="dp-mode-btn" :class="{ active: mode === 'schematic' }" @click="mode = 'schematic'">Schematic</button>
                 <button class="dp-mode-btn" :class="{ active: mode === 'cycles' }" @click="mode = 'cycles'">Cycles</button>
+                <button class="dp-mode-btn" :class="{ active: mode === 'cache' }" @click="mode = 'cache'">Cache</button>
             </div>
 
             <!-- Drawn schematic (per-architecture, data-driven) -->
@@ -142,6 +144,9 @@ export default defineComponent({
 
             <!-- Pipeline cycle timeline (WinMIPS64-style) -->
             <CyclesView v-else-if="mode === 'cycles'" :dark="dark" />
+
+            <!-- Cache / memory hierarchy (SMPcaché-style) -->
+            <CacheView v-else-if="mode === 'cache'" :dark="dark" />
 
             <!-- Block view (generic, any architecture) -->
             <template v-else>
