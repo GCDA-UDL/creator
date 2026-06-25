@@ -34,6 +34,8 @@ import {
 import DatapathSchematic from "./DatapathSchematic.vue";
 import CyclesView from "./CyclesView.vue";
 import CacheView from "./CacheView.vue";
+import CoherenceView from "./CoherenceView.vue";
+import VMemoryView from "./VMemoryView.vue";
 import { architecture } from "@/core/core.mjs";
 
 interface DpBlock {
@@ -44,7 +46,7 @@ interface DpBlock {
 }
 
 export default defineComponent({
-    components: { DatapathSchematic, CyclesView, CacheView },
+    components: { DatapathSchematic, CyclesView, CacheView, CoherenceView, VMemoryView },
 
     props: {
         dark: { type: Boolean, default: false },
@@ -53,7 +55,13 @@ export default defineComponent({
     data() {
         return {
             trace: null as DatapathTrace | null,
-            mode: "blocks" as "blocks" | "schematic" | "cycles" | "cache",
+            mode: "blocks" as
+                | "blocks"
+                | "schematic"
+                | "cycles"
+                | "cache"
+                | "coherence"
+                | "vmemory",
         };
     },
 
@@ -137,6 +145,8 @@ export default defineComponent({
                 <button class="dp-mode-btn" :class="{ active: mode === 'schematic' }" @click="mode = 'schematic'">Schematic</button>
                 <button class="dp-mode-btn" :class="{ active: mode === 'cycles' }" @click="mode = 'cycles'">Cycles</button>
                 <button class="dp-mode-btn" :class="{ active: mode === 'cache' }" @click="mode = 'cache'">Cache</button>
+                <button class="dp-mode-btn" :class="{ active: mode === 'coherence' }" @click="mode = 'coherence'">Coherence</button>
+                <button class="dp-mode-btn" :class="{ active: mode === 'vmemory' }" @click="mode = 'vmemory'">Virtual mem</button>
             </div>
 
             <!-- Drawn schematic (per-architecture, data-driven) -->
@@ -147,6 +157,12 @@ export default defineComponent({
 
             <!-- Cache / memory hierarchy (SMPcaché-style) -->
             <CacheView v-else-if="mode === 'cache'" :dark="dark" />
+
+            <!-- Multiprocessor cache coherence (MESI/MSI) -->
+            <CoherenceView v-else-if="mode === 'coherence'" :dark="dark" />
+
+            <!-- Virtual memory (TLB + paging) -->
+            <VMemoryView v-else-if="mode === 'vmemory'" :dark="dark" />
 
             <!-- Block view (generic, any architecture) -->
             <template v-else>
