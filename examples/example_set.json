@@ -56,6 +56,13 @@
     "url": "examples/udl-tests/list-vmemory.json",
     "description": "UdL · programas para validar la memoria virtual (TLB/paginas)"
   },
+  {
+    "name": "UdL · Test Lab (I/O)",
+    "id": "udl-lab",
+    "architecture": "RISC-V (RV32IMFD)",
+    "url": "examples/udl-tests/list-lab.json",
+    "description": "UdL · perifericos visuales (LED/switch/7-seg/matriz) por MMIO"
+  },
 
 
   {

@@ -32,6 +32,7 @@ npx vite            # abre http://localhost:5210
 | 3 | **Caché / jerarquía** (SMPcaché) | `UdL · Test Cache` | Datapath → **Cache** | [03-cache.md](03-cache.md) |
 | 4 | **Coherencia MESI** (SMPcaché multinúcleo) | *(ejemplos internos del modo)* | Datapath → **Coherence** | [04-coherence.md](04-coherence.md) |
 | 5 | **Memoria virtual** (TLB/paginación) | `UdL · Test Virtual memory` | Datapath → **Virtual mem** | [05-virtual-memory.md](05-virtual-memory.md) |
+| 6 | **Lab E/S** (LEDs/switches/7-seg/matriz; KIT PR3/PR4) | `UdL · Test Lab (I/O)` | pestaña **Lab** | [06-lab.md](06-lab.md) |
 
 > **Coherencia** es multinúcleo y CREATOR ejecuta un solo núcleo: por eso **no** se carga desde el
 > desplegable Examples, sino que se valida con el **editor de trazas** y los **ejemplos integrados**
@@ -51,6 +52,7 @@ Los planes de validación de arriba usan el programa **completo**; los pequeños
 | Pipeline | 01 RAW · 02 Load-use · 03 Latencia mul · 04 Salto tomado | Todos los riesgos |
 | Cache | 01 Espacial · 02 Temporal · 03 Conflicto · 04 Escrituras (WB) | Localidad + conflicto |
 | Virtual mem | 01 Paginación · 02 Revisita (TLB) · 03 Thrashing | Paginación + revisita |
+| Lab (I/O) | 01 LEDs · 02 Contador · 03 Switches · 04 Matriz · 05 7-seg | Todos los periféricos |
 
 ### Validación automática de los ejemplos
 

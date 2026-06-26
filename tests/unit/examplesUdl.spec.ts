@@ -21,8 +21,8 @@ const allSets: SetEntry[] = JSON.parse(readFileSync(ex("examples/example_set.jso
 const udlSets = allSets.filter(s => s.id.startsWith("udl-"));
 
 describe("UdL example sets — registration", () => {
-    it("registers exactly 4 UdL groups, all for RISC-V (RV32IMFD)", () => {
-        expect(udlSets.length).toBe(4);
+    it("registers exactly 5 UdL groups, all for RISC-V (RV32IMFD)", () => {
+        expect(udlSets.length).toBe(5);
         for (const s of udlSets) {
             expect(s.architecture).toBe("RISC-V (RV32IMFD)");
             expect(existsSync(ex(s.url))).toBe(true); // list file exists

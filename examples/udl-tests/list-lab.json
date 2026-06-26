@@ -1,0 +1,8 @@
+[
+  { "name": "Lab 01 · Encender LEDs", "id": "lab01", "url": "examples/udl-tests/lab/lab_01_leds.s", "description": "escritura MMIO al banco de LEDs" },
+  { "name": "Lab 02 · Contador en LEDs", "id": "lab02", "url": "examples/udl-tests/lab/lab_02_contador.s", "description": "contador binario 0..15" },
+  { "name": "Lab 03 · Leer switches", "id": "lab03", "url": "examples/udl-tests/lab/lab_03_switch.s", "description": "lee switches y los refleja en LEDs (entrada)" },
+  { "name": "Lab 04 · Matriz LED 8x8", "id": "lab04", "url": "examples/udl-tests/lab/lab_04_matriz.s", "description": "dibuja un patron por registros de fila" },
+  { "name": "Lab 05 · Display 7-seg", "id": "lab05", "url": "examples/udl-tests/lab/lab_05_7seg.s", "description": "muestra un valor hex" },
+  { "name": "Lab · completo (todos los perifericos)", "id": "laball", "url": "examples/udl-tests/lab/lab_completo.s", "description": "LEDs + 7-seg + matriz + switches" }
+]

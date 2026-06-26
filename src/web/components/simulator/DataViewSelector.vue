@@ -229,6 +229,16 @@ export default defineComponent({
         <span>Datapath</span>
       </button>
 
+      <!-- Lab / I/O peripherals Tab (UdL) -->
+      <button
+        v-if="architecture_name.includes('RV32')"
+        :class="['tab', { active: current_reg_type === 'lab' }]"
+        @click="change_data_view('lab')"
+      >
+        <font-awesome-icon :icon="['fas', 'microchip']" />
+        <span>Lab</span>
+      </button>
+
       <!-- Arduino Tab -->
       <button
         v-if="architecture_name.includes('RV32') && isCreatinoUp"

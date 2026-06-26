@@ -35,6 +35,7 @@ import Stats from "./simulator/Stats.vue";
 import Flash from "./simulator/Flash.vue";
 import ArduinoTerminal from "./simulator/ArduinoTerminal.vue";
 import DatapathView from "./simulator/DatapathView.vue";
+import LabView from "./simulator/LabView.vue";
 
 export default defineComponent({
   props: {
@@ -78,7 +79,8 @@ export default defineComponent({
     Flash,
     Terminal,
     ArduinoTerminal,
-    DatapathView
+    DatapathView,
+    LabView
     // App
   },
 
@@ -206,6 +208,13 @@ export default defineComponent({
                   v-if="data_mode === 'datapath'"
                   :dark="dark"
                   ref="datapath"
+                />
+
+                <!-- Lab / I/O peripherals view (UdL) -->
+                <LabView
+                  v-if="data_mode === 'lab'"
+                  :dark="dark"
+                  ref="lab"
                 />
               </div>
             </div>

@@ -40,6 +40,8 @@ import { InterruptHandlerType } from "@/core/executor/InterruptManager.mjs";
 import { startExecutionHistory } from "@/core/trace/executionHistory.mts";
 // UdL extension: record the data memory-access stream for the cache view.
 import { startMemoryAccessHistory } from "@/core/trace/memoryAccessHistory.mts";
+// UdL extension: register the visual I/O peripherals (Lab view).
+import { registerUdlDevices } from "@/core/executor/devices_udl.mts";
 
 import SpinnerLoading from "./components/general/SpinnerLoading.vue";
 import SupportedBrowsers from "./components/general/SupportedBrowsers.vue";
@@ -410,6 +412,8 @@ export default {
     startExecutionHistory();
     // UdL: start recording the data memory-access stream (cache view).
     startMemoryAccessHistory();
+    // UdL: register the visual I/O peripherals (Lab view).
+    registerUdlDevices();
   },
 
   /************************
