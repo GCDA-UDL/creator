@@ -1,6 +1,6 @@
 # 06 · Lab — periféricos de E/S por MMIO (modo *Lab*)
 
-![Vista Lab: banco de LEDs, switches (dip-switch), display 7-seg y matriz 8×8 conectados por MMIO](img/lab.png)
+![Vista Lab: banco de LEDs, switches, display 7-seg, pulsador (IRQ) y matriz 8×8 conectados por MMIO, en un lienzo con componentes arrastrables](img/lab.png)
 
 > *Captura de referencia del simulador real (este plan describe qué debe verse y por qué).*
 
@@ -73,7 +73,11 @@ flowchart LR
 | Banco de LEDs | `0xF0001008` | `0xF0001000` | `0xF0001004` | 1 bit por LED |
 | Switches | `0xF0001018` | `0xF0001010` | `0xF0001014` | 1 bit por switch (lectura) |
 | Display 7-seg | `0xF0001028` | `0xF0001020` (modo) | `0xF0001024` | valor; modo 2 = hex, 1 = dec |
+| Pulsador (IRQ) | `0xF0001038` | `0xF0001030` | `0xF0001034` | bit0 = pulsado; flanco de subida → interrupción **External** |
 | Matriz LED 8×8 | `0xF0001048` (ROW0, +4/fila) | `0xF0001040` | `0xF0001044` | bitmap por fila, **MSB = columna izquierda** |
+
+> **Lienzo arrastrable.** Los periféricos se pueden **arrastrar por su cabecera** (manija `⠿`) y la
+> disposición se guarda (localStorage); el botón **Reordenar** restaura la posición por defecto.
 
 > Está separada de la consola/SO (`0xF0000000`–`0xF000001F`), que CREATOR ya tenía.
 
@@ -86,7 +90,9 @@ flowchart LR
 | 3 | Cargar `Lab 03 · Leer switches`; abrir **Lab**; **conmutar** un switch; **Step** | Switches → LEDs | el LED del bit conmutado se enciende | `lw` de DATA de switches: la **entrada** (UI → registro) la lee el programa con la misma instrucción de memoria. |
 | 4 | Cargar `Lab 04 · Matriz LED 8x8`; **Run**; **Lab** | Matriz 8×8 | un **rombo** encendido | 8 `sw` a ROW0..ROW7; cada palabra es el bitmap de una fila (MSB = columna izquierda). |
 | 5 | Cargar `Lab 05 · Display 7-seg`; **Run**; **Lab** | Display 7-seg | muestra **`CAFE`** (modo hex) | `sw` de modo=2 a CTRL + `sw` de `0xCAFE` a VALUE; el display decodifica cada nibble a 7 segmentos. |
-| 6 | Cargar `Lab · completo`; **Run**; **Lab** | todos | LEDs `0xAA` + 7-seg `0042` + matriz flecha | Un solo programa controla los 4 periféricos por MMIO. |
+| 6 | Cargar `Lab · completo`; **Run**; **Lab** | todos | LEDs `0xAA` + 7-seg `0042` + matriz flecha | Un solo programa controla los periféricos por MMIO. |
+| 7 | Cargar `Lab 07 · Pulsador (sondeo)`; **Lab**; **Step** y **mantén pulsado** el botón | Pulsador + LED 0 | el botón marca **PULSADO**; el LED 0 se enciende mientras lo mantienes | **Sondeo (polling)**: la CPU lee el registro del botón en bucle (`lw`) y refleja el bit. |
+| 8 | **Settings → Interrupt handler → Custom (architecture)**; cargar `Lab 06 · Pulsador (interrupción)`; **Step** por el bucle de espera y **pulsa** el botón | LEDs (contador) | al pulsar, la **ISR** (mtvec) salta e **incrementa** el contador de LEDs; vuelve con `mret` | **Interrupción External**: el flanco de subida marca `mip` (bit 11); con `mstatus.MIE` + `mie.MEIE` el núcleo vectoriza a la ISR. Contraste sondeo↔interrupción (tema clásico de AC). |
 
 ## Variaciones
 
@@ -102,7 +108,10 @@ flowchart LR
 - [ ] Lab 03 — conmutar un switch + Step enciende el LED correspondiente (entrada por MMIO). *(Sí/No)*
 - [ ] Lab 04 — la matriz muestra el rombo (MSB = columna izquierda). *(Sí/No)*
 - [ ] Lab 05 — el 7-seg muestra `CAFE` en hex. *(Sí/No)*
-- [ ] Lab completo — los 4 periféricos reflejan el programa a la vez. *(Sí/No)*
+- [ ] Lab completo — los periféricos reflejan el programa a la vez. *(Sí/No)*
+- [ ] Lab 07 — mantener pulsado el botón enciende el LED 0 (sondeo). *(Sí/No)*
+- [ ] Lab 06 — con handler **Custom**, pulsar dispara la ISR y suma 1 a los LEDs (interrupción). *(Sí/No)*
+- [ ] El lienzo permite **arrastrar** periféricos por la cabecera y **Reordenar** los recoloca. *(Sí/No)*
 - [ ] Las direcciones MMIO de la tabla coinciden con las que muestra la vista. *(Sí/No)*
 
 ## Referencias

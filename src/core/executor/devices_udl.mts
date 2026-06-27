@@ -16,6 +16,8 @@
 
 import { Device, devices } from "./devices.mts";
 import { coreEvents } from "../events.mts";
+import { INTERRUPTS } from "../capi/interrupts.mts";
+import { InterruptType } from "./InterruptManager.mts";
 
 // fire-and-forget emit (the event bus is loosely typed for UdL signals)
 const emit = (type: string, payload: unknown) =>
@@ -27,6 +29,7 @@ export const LAB_MMIO = {
     led: { ctrl: 0xf0001000, status: 0xf0001004, data: 0xf0001008 }, // DATA: 1 bit per LED
     switches: { ctrl: 0xf0001010, status: 0xf0001014, data: 0xf0001018 }, // DATA: 1 bit per switch (read)
     seg: { ctrl: 0xf0001020, status: 0xf0001024, data: 0xf0001028 }, // ctrl=mode, DATA=value
+    button: { ctrl: 0xf0001030, status: 0xf0001034, data: 0xf0001038 }, // DATA bit0 = pressed
     matrix: { ctrl: 0xf0001040, status: 0xf0001044, data: 0xf0001048 }, // 8 rows × 1 word (row bitmap)
 } as const;
 
@@ -55,6 +58,38 @@ export class SwitchDevice extends Device {
     }
     getValue(): number {
         return this.readValue(LAB_MMIO.switches.data).getUint32(0) >>> 0;
+    }
+}
+
+/**
+ * Push-button: a rising edge (press) raises a RISC-V EXTERNAL interrupt so a program
+ * with an ISR (mtvec handler) runs on press. DATA bit0 is also readable for polling.
+ * NOTE: vectoring to the ISR needs the "Custom (architecture)" interrupt handler
+ * (Settings); the button is always pollable regardless.
+ */
+export class ButtonDevice extends Device {
+    private last = -1;
+    override handler(): void {
+        const v = this.readValue(LAB_MMIO.button.data).getUint32(0) & 1;
+        if (v !== this.last) {
+            this.last = v;
+            emit("device-output", { id: "button", pressed: v });
+        }
+    }
+    press(down: boolean): void {
+        const wasDown = (this.readValue(LAB_MMIO.button.data).getUint32(0) & 1) === 1;
+        this.writeValue(down ? 1 : 0, LAB_MMIO.button.data);
+        if (down && !wasDown) {
+            // rising edge → external interrupt (serviced if mstatus.MIE + mie.MEIE)
+            try {
+                INTERRUPTS.create(InterruptType.External);
+            } catch {
+                /* interrupts may be unavailable in some contexts; polling still works */
+            }
+        }
+    }
+    getPressed(): number {
+        return this.readValue(LAB_MMIO.button.data).getUint32(0) & 1;
     }
 }
 
@@ -119,18 +154,21 @@ export function registerUdlDevices(): void {
     const led = new LedBankDevice(makeBlock(LAB_MMIO.led, 2));
     const switches = new SwitchDevice(makeBlock(LAB_MMIO.switches, 2));
     const seg = new SevenSegDevice(makeBlock(LAB_MMIO.seg, 2));
+    const button = new ButtonDevice(makeBlock(LAB_MMIO.button, 2));
     const matrix = new LedMatrixDevice(makeBlock(LAB_MMIO.matrix, 8));
 
     devices.set("led", led);
     devices.set("switches", switches);
     devices.set("seg", seg);
+    devices.set("button", button);
     devices.set("matrix", matrix);
 
-    // UI → simulator: a flipped switch updates the switch DATA register.
+    // UI → simulator: a flipped switch / a button press updates the device register.
     (coreEvents as unknown as { on: (t: string, h: (e: any) => void) => void }).on(
         "device-input",
         (e: { id: string; value: number }) => {
             if (e?.id === "switches") switches.setValue(e.value);
+            else if (e?.id === "button") button.press(!!e.value);
         },
     );
 
@@ -138,9 +176,10 @@ export function registerUdlDevices(): void {
     (coreEvents as unknown as { on: (t: string, h: () => void) => void }).on(
         "registers-reset",
         () => {
-            for (const d of [led, switches, seg, matrix]) d.reset();
+            for (const d of [led, switches, seg, button, matrix]) d.reset();
             emit("device-output", { id: "led", value: 0 });
             emit("device-output", { id: "seg", value: 0, mode: 0 });
+            emit("device-output", { id: "button", pressed: 0 });
             emit("device-output", { id: "matrix", rows: [0, 0, 0, 0, 0, 0, 0, 0] });
         },
     );
@@ -151,16 +190,19 @@ export function snapshotUdlDevices(): {
     led: number;
     switches: number;
     seg: { value: number; mode: number };
+    button: number;
     matrix: number[];
 } {
     const led = devices.get("led") as LedBankDevice | undefined;
     const sw = devices.get("switches") as SwitchDevice | undefined;
     const seg = devices.get("seg") as SevenSegDevice | undefined;
+    const btn = devices.get("button") as ButtonDevice | undefined;
     const mat = devices.get("matrix") as LedMatrixDevice | undefined;
     return {
         led: led?.getValue() ?? 0,
         switches: sw?.getValue() ?? 0,
         seg: seg?.getState() ?? { value: 0, mode: 0 },
+        button: btn?.getPressed() ?? 0,
         matrix: mat?.getRows() ?? [0, 0, 0, 0, 0, 0, 0, 0],
     };
 }

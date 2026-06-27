@@ -22,7 +22,7 @@ async function loadLab(page: Page, name: string) {
 async function runAndOpenLab(page: Page) {
     await page.getByRole("button", { name: "Run" }).click();
     await page.waitForTimeout(700);
-    await page.getByRole("button", { name: "Lab" }).click();
+    await page.getByRole("button", { name: "Lab", exact: true }).click();
     await expect(page.locator(".lab-view")).toBeVisible();
 }
 
@@ -56,4 +56,30 @@ test("LED matrix renders a pattern", async ({ page }) => {
         (els) => els.filter((e: any) => e.value === true).length,
     );
     expect(lit).toBeGreaterThan(8);
+});
+
+test("push-button press updates the peripheral state", async ({ page }) => {
+    await bootRV32(page);
+    await loadLab(page, "Lab 07 · Pulsador (sondeo/polling)");
+    await page.getByRole("button", { name: "Lab", exact: true }).click();
+    await expect(page.locator(".lab-view")).toBeVisible();
+    // press the button → @button-press → device-input → device updates → "PULSADO"
+    await page.locator("wokwi-pushbutton").evaluate((el) => el.dispatchEvent(new Event("button-press")));
+    await expect(page.locator(".lab-view")).toContainText("PULSADO");
+});
+
+test("peripherals can be dragged around the canvas", async ({ page }) => {
+    await bootRV32(page);
+    await loadLab(page, "Lab 01 · Encender LEDs");
+    await page.getByRole("button", { name: "Lab", exact: true }).click();
+    const led = page.locator(".periph").first();
+    const before = await led.evaluate((el) => (el as HTMLElement).style.left);
+    const header = led.locator("header");
+    const box = (await header.boundingBox())!;
+    await page.mouse.move(box.x + 20, box.y + 10);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 140, box.y + 110, { steps: 6 });
+    await page.mouse.up();
+    const after = await led.evaluate((el) => (el as HTMLElement).style.left);
+    expect(after).not.toBe(before);
 });

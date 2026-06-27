@@ -52,7 +52,7 @@ Los planes de validación de arriba usan el programa **completo**; los pequeños
 | Pipeline | 01 RAW · 02 Load-use · 03 Latencia mul · 04 Salto tomado | Todos los riesgos |
 | Cache | 01 Espacial · 02 Temporal · 03 Conflicto · 04 Escrituras (WB) | Localidad + conflicto |
 | Virtual mem | 01 Paginación · 02 Revisita (TLB) · 03 Thrashing | Paginación + revisita |
-| Lab (I/O) | 01 LEDs · 02 Contador · 03 Switches · 04 Matriz · 05 7-seg | Todos los periféricos |
+| Lab (I/O) | 01 LEDs · 02 Contador · 03 Switches · 04 Matriz · 05 7-seg · 06 Pulsador (IRQ) · 07 Pulsador (sondeo) | Todos los periféricos |
 
 ### Validación automática de los ejemplos
 
