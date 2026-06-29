@@ -144,6 +144,13 @@ En el modelo (`schedulePipeline`), un registro escrito queda disponible para un 
 
 Latencias por defecto del modelo: **FP add = 4 (A1..A4)**, **Mul = 7 (M1..M7)**, **Div = 24 (DIV)**.
 
+> **Procedencia (verificada).** Estas unidades multi-ciclo y sus latencias (4/7/24) y el riesgo WAW
+> **no** están en los libros *Computer Organization and Design* (P&H COD). La fuente **verificable** es
+> **WinMIPS64** (diálogo *Set Architecture*: "FP Addition Latency 4 · FP Multiplier Latency 7 · FP
+> Division Latency 24"; guía UC3M `practica1_winmips64.pdf`). Su origen último es H&P *Computer
+> Architecture: A Quantitative Approach* (Appendix C), **no incluido** en las referencias del proyecto.
+> Verificación completa figura/página/cita en `creator_riscv_udl_plan/17_verificacion_libros_datapath_pipeline.md`.
+
 ### Penalización de salto y predicción no-tomado
 
 > El salto se **resuelve en EX** con predicción **"no tomado"** (*predict-not-taken*). Si el salto
