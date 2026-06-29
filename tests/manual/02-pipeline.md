@@ -144,12 +144,16 @@ En el modelo (`schedulePipeline`), un registro escrito queda disponible para un 
 
 Latencias por defecto del modelo: **FP add = 4 (A1..A4)**, **Mul = 7 (M1..M7)**, **Div = 24 (DIV)**.
 
-> **Procedencia (verificada).** Estas unidades multi-ciclo y sus latencias (4/7/24) y el riesgo WAW
-> **no** están en los libros *Computer Organization and Design* (P&H COD). La fuente **verificable** es
-> **WinMIPS64** (diálogo *Set Architecture*: "FP Addition Latency 4 · FP Multiplier Latency 7 · FP
-> Division Latency 24"; guía UC3M `practica1_winmips64.pdf`). Su origen último es H&P *Computer
-> Architecture: A Quantitative Approach* (Appendix C), **no incluido** en las referencias del proyecto.
-> Verificación completa figura/página/cita en `creator_riscv_udl_plan/17_verificacion_libros_datapath_pipeline.md`.
+> **Procedencia (verificada con figura y página).** Estas unidades multi-ciclo y sus latencias y el
+> riesgo WAW **no** están en los libros *Computer Organization and Design* (P&H COD), pero **sí** en
+> **H&P, *Computer Architecture: A Quantitative Approach*, 6.ª ed., Appendix C**: la **Fig. C.30** dibuja
+> el multiplicador **M1..M7** y el sumador **A1..A4** ("fully pipelined … depth of seven and four
+> stages") y el divisor "not pipelined … 24 clock cycles"; la **Fig. C.29** da la tabla de latencias (FP
+> add *latency* 3 = 4 etapas, FP mul *latency* 6 = 7 etapas, FP div 24/ii 25); la **Fig. C.31** define el
+> **WAW** ("instructions no longer reach WB in order") y la ausencia de **WAR** ("register reads always
+> occur in ID"). El uso por defecto (4/7/24) está además en el diálogo *Set Architecture* de **WinMIPS64**
+> (`practica1_winmips64.pdf`). Verificación completa figura/página/cita:
+> `creator_riscv_udl_plan/17_verificacion_libros_datapath_pipeline.md`.
 
 ### Penalización de salto y predicción no-tomado
 
