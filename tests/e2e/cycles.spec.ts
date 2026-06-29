@@ -29,6 +29,9 @@ async function openCycles(page: Page) {
     await page.getByRole("button", { name: "Datapath" }).click();
     await page.getByRole("button", { name: "Cycles", exact: true }).click();
     await expect(page.locator(".cyc-grid")).toBeVisible();
+    // The view now defaults to step mode (cursor at the engine's position); for the
+    // assertions that need the full timeline, switch to Live.
+    await page.getByRole("button", { name: "Live", exact: true }).click();
 }
 
 async function cyclesCount(page: Page): Promise<number> {
@@ -104,6 +107,29 @@ test.describe("Cycle timeline (pipeline)", () => {
         expect(await page.locator(".cyc-grid .stg").count()).toBeGreaterThan(0);
         expect(await cyclesCount(page)).toBeGreaterThan(0);
         await page.locator(".cyc-view").screenshot({ path: "tests/e2e/__screenshots__/riscv-cycles.png" });
+    });
+
+    test("defaults to step mode (not the whole timeline); ⏮ rewinds to cycle 1", async ({ page }) => {
+        await selectArchitecture(page, "RISC-V (RV32IMFD)");
+        await loadFirstExampleAndRun(page);
+        // open Cycles WITHOUT switching to Live
+        await page.getByRole("button", { name: "Datapath" }).click();
+        await page.getByRole("button", { name: "Cycles", exact: true }).click();
+        await expect(page.locator(".cyc-grid")).toBeVisible();
+
+        const parse = async () =>
+            (await page.locator(".cyc-cnow").innerText()).split("/").map(s => parseInt(s.trim(), 10));
+        const [n, m] = await parse();
+        expect(m).toBeGreaterThan(1);
+        expect(n).toBe(1); // step mode default: starts at cycle 1 (IF of instr 1), NOT the whole timeline
+        // ▶ advances exactly one clock at a time
+        await page.getByRole("button", { name: "▶" }).click();
+        expect((await parse())[0]).toBe(2);
+        await page.getByRole("button", { name: "▶" }).click();
+        expect((await parse())[0]).toBe(3);
+        // ⏮ rewinds to the first cycle
+        await page.getByRole("button", { name: "⏮" }).click();
+        expect((await parse())[0]).toBe(1);
     });
 
     const delaySlot = (p: Page) =>

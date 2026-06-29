@@ -89,6 +89,19 @@ describe("schedulePipeline — núcleo", () => {
         expect(s.stats.branchTakenStalls).toBeGreaterThan(0);
     });
 
+    it("default branch resolution is ID → 1-cycle penalty (P&H COD textbook)", () => {
+        const s = schedulePipeline([I({ isBranch: true, branchTaken: true, mnemonic: "beq" }), I({ writes: ["x5"] })], cfg());
+        expect(DEFAULT_PIPELINE_CONFIG.branchStage).toBe("ID");
+        expect(s.stats.branchTakenStalls).toBe(1);
+    });
+
+    it("taken-branch penalty follows the resolution stage: ID=1, EX=2, MEM=3", () => {
+        const prog = () => [I({ isBranch: true, branchTaken: true, mnemonic: "beq" }), I({ writes: ["x5"] })];
+        expect(schedulePipeline(prog(), cfg({ branchStage: "ID" })).stats.branchTakenStalls).toBe(1);
+        expect(schedulePipeline(prog(), cfg({ branchStage: "EX" })).stats.branchTakenStalls).toBe(2);
+        expect(schedulePipeline(prog(), cfg({ branchStage: "MEM" })).stats.branchTakenStalls).toBe(3);
+    });
+
     it("not-taken branch → no branch stalls", () => {
         const s = schedulePipeline([I({ isBranch: true, branchTaken: false, mnemonic: "beq" }), I({ writes: ["x5"] })], cfg());
         expect(s.stats.branchTakenStalls).toBe(0);

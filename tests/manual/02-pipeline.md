@@ -157,11 +157,14 @@ Latencias por defecto del modelo: **FP add = 4 (A1..A4)**, **Mul = 7 (M1..M7)**,
 
 ### Penalización de salto y predicción no-tomado
 
-> El salto se **resuelve en EX** con predicción **"no tomado"** (*predict-not-taken*). Si el salto
-> **se toma**, las instrucciones ya buscadas tras él son erróneas y deben descartarse →
-> **penalización de control** (en el modelo, 2 ciclos contabilizados como *Branch-taken stalls*).
-> Con **BTB** acertado el coste de un salto ya visto tomado es 0; con **delay slot** se oculta 1
-> ciclo de penalización. *Fuente: P&H COD-RISCV, §4.8 ("Control Hazards"); Stallings (predicción).*
+> El salto usa predicción **"no tomado"** (*predict-not-taken*). Si el salto **se toma**, las
+> instrucciones ya buscadas son erróneas y se descartan → **penalización de control** (*Branch-taken
+> stalls*). La **penalización depende de la etapa donde se resuelve el salto**, según P&H COD: en **ID
+> = 1 ciclo** (versión optimizada del Cap. 4, **el valor por defecto**), en **EX = 2** (estilo
+> WinMIPS64) o en **MEM = 3** (cauce base sin optimizar). El selector **"Branch resuelto en"** del panel
+> de config permite elegir ID/EX/MEM. Con **BTB** acertado el coste de un salto ya visto tomado es 0;
+> con **delay slot** (solo MIPS) se oculta 1 ciclo. *Fuente: P&H COD-RISCV §4.8–4.9 ("Control Hazards":
+> resolver el salto antes reduce la penalización a 1 ciclo); Stallings (predicción).*
 
 ### CPI
 
@@ -178,13 +181,15 @@ Latencias por defecto del modelo: **FP add = 4 (A1..A4)**, **Mul = 7 (M1..M7)**,
 | Arrancar | En `CREATOR/GCDA-UDL-creator`: `npx vite` → abrir `http://localhost:5210` |
 | Arquitectura | **RISC-V (RV32IMFD)** (clic en la tarjeta de selección) |
 | Cargar ejemplo | Botón **Examples** → desplegable de CONJUNTOS → grupo **"UdL · Test Pipeline (Cycles)"** → clicar el ejemplo **"Pipeline · riesgos (RAW/load-use/mul/branch)"** |
-| Ejecutar | Botón **Run** (todo) o **Step** (instrucción a instrucción; la rejilla crece a cada paso) |
+| Ejecutar | Botón **Run** (todo) o **Step** (instrucción a instrucción) |
 | Vista a usar | Pestaña **Datapath** → botón de modo **Cycles** |
-| Config. por defecto | Forwarding **ON**; FP add = 4; Mul = 7; Div = 24; BTB **off**; delay slot **off** |
+| Avance del cauce | La vista arranca en **ciclo 1** (solo IF). **▶** avanza un ciclo de reloj (el pipeline se llena IF→ID→EX→MEM→WB en diagonal); **⏮** vuelve al ciclo 1; **Live** muestra el cronograma completo. El **Step** de CREATOR ejecuta una instrucción entera (el cauce es más fino → para ver etapa a etapa usa ▶) |
+| Config. por defecto | Forwarding **ON**; **Branch resuelto en ID (1 ciclo, P&H)**; FP add = 4; Mul = 7; Div = 24; BTB **off**; delay slot **off** |
 
 Panel **"Pipeline config"** (botón con engranaje en la barra de la vista Cycles): conmutador
 *Enable forwarding*, campos *FP Add / Multiplier / Division latency*, casillas *Branch Target
-Buffer* y *Delay slot*, y los presets **MIPS classic** / **No forwarding** / **Predicted (BTB)**.
+Buffer* y *Delay slot* (esta última **solo MIPS**), el selector **Branch resuelto en** (ID/EX/MEM),
+y los presets **P&H textbook** / **MIPS classic** / **No forwarding** / **Predicted (BTB)**.
 El botón **Student** activa el modo estudiante (las burbujas muestran *qué registro* se espera).
 
 > Nota: tras seleccionar la arquitectura, el panel de configuración recuerda el último estado
@@ -215,7 +220,7 @@ main:
     mul  a0, t0, t1           # ocupa M1..M7 en la rejilla
     addi a1, a0, 1            # depende del mul -> varias burbujas hasta M7
 
-    # (4) Salto tomado: penalización de control (resuelto en EX)
+    # (4) Salto tomado: penalización de control (según etapa de resolución; por defecto ID = 1)
     beq  t0, t0, done         # t0==t0 -> SIEMPRE TOMADO -> Branch-taken stalls
     addi a2, x0, 111          # (saltada, no se ejecuta)
 done:
@@ -251,7 +256,7 @@ por defecto / pulsar **Reset** en el panel). Ejecutar con **Run**, abrir **Datap
 | 5 | Tooltip de la burbuja load-use | Cycles · pasar el ratón sobre la celda azul del paso 4 | Texto tipo *"RAW stall — waiting for t5 (ready in cycle N)"* | El modelo expone `waitFor`/`readyCycle`; coherente con la dependencia RAW concreta |
 | 6 | Multiplicador segmentado M1..M7 | Cycles · rejilla, fila `mul a0,t0,t1` | EX ocupa **7 celdas naranja consecutivas** etiquetadas **M1, M2, …, M7** | Multiplicador segmentado de latencia 7 (H&P apéndice C; latencia por defecto Mul=7) |
 | 7 | Dependiente del `mul` espera a M7 | Cycles · rejilla, fila `addi a1,a0,1` | Varias celdas azules **RAW** hasta que `a0` está listo (fin de M7); su EX arranca después de M7 | RAW sobre resultado de latencia larga; con forwarding el dato llega al final de la última subetapa (fin de EX = M7) |
-| 8 | Salto **tomado** y penalización | Cycles · rejilla, fila `beq t0,t0,done` + tarjetas de estadísticas | La instrucción `addi a2,x0,111` (saltada) **no** aparece; contador **Branch-taken stalls = 2** | `beq t0,t0` siempre tomado; resuelto en EX, predict-not-taken → 2 ciclos de penalización (P&H §4.8); modelo: `penalty = 2` |
+| 8 | Salto **tomado** y penalización | Cycles · rejilla, fila `beq t0,t0,done` + tarjetas de estadísticas | La instrucción `addi a2,x0,111` (saltada) **no** aparece; **Branch-taken stalls** sube **1 por salto tomado** (resolución por defecto **ID = 1**) | `beq t0,t0` siempre tomado; predict-not-taken; penalización = etapa de resolución (P&H §4.8–4.9): **ID=1** (por defecto), EX=2, MEM=3. Cambia el selector *Branch resuelto en* y recalcula al instante |
 | 9 | Contadores de stalls (ON) | Cycles · tarjetas de estadísticas | **WAR stalls = 0**; **WAW stalls = 0**; **RAW stalls ≥ 1** (al menos la del load-use); **Structural = 0** (un solo `mul`, sin segundo `div`) | WAR=0 y WAW=0 por emisión en orden de un solo flujo; RAW del load-use es inevitable (H&P §3.1, P&H §4.7) |
 | 10 | CPI > 1 | Cycles · tarjeta **CPI** (resaltada) | CPI **> 1** *(valor exacto: verificar en la herramienta)* | Burbujas de load-use + espera del `mul` + penalización de salto añaden ciclos sin instrucciones → CPI>1 (P&H §4.5) |
 | 11 | Totales coherentes | Cycles · tarjetas **Cycles**, **Instructions**, **Code size** | `Cycles ≈ Instructions + 4 (vaciado) + Σ(burbujas)` *(verificar valores exactos)*; `CPI = Cycles/Instructions` exacto | Definición de CPI; +4 por las 4 etapas posteriores a IF de la última instrucción |
@@ -273,8 +278,9 @@ Confirme el sentido del cambio, no sólo que cambie.
 | V1 | Preset **"No forwarding"** (o desmarcar *Enable forwarding*) | La cadena RAW ALU-ALU (filas `addi t1`/`t2`/`add t3`) **pasa a generar burbujas azules RAW**; **RAW stalls sube**, **Cycles sube**, **CPI sube**; sin re-ejecutar | Sin bypass, el valor sólo está listo tras WB → hasta 2-3 burbujas por dependencia RAW (P&H §4.7). Demuestra el valor del forwarding |
 | V2 | Volver a **forwarding ON** | Las burbujas de la cadena RAW **desaparecen**; queda **1** burbuja RAW en el load-use; Cycles y CPI bajan | El load-use es la **única** burbuja que el forwarding no elimina (dato en MEM) (P&H §4.7) |
 | V3 | Subir **Multiplier latency** de 7 a, p. ej., 10 | La fila `mul` pasa a ocupar **M1..M10**; el dependiente `addi a1,a0` espera **más** burbujas; Cycles y CPI suben | La latencia de la unidad multiciclo determina cuándo está disponible el resultado (H&P apéndice C) |
-| V4 | Marcar **Delay slot** (**solo MIPS-32**: en RISC-V/ARM el toggle está **deshabilitado** — esas ISA no tienen delay slot) | **Branch-taken stalls** baja en 1 (de 2 a 1) | El delay slot ejecuta la instrucción siguiente al salto, ocultando 1 ciclo de penalización; **es propio de MIPS** (P&H COD §4.6/4.8: "the solution actually used by the MIPS architecture"); modelo: `penalty -= 1` |
+| V4 | Marcar **Delay slot** (**solo MIPS-32**: en RISC-V/ARM el toggle está **deshabilitado** — esas ISA no tienen delay slot) | **Branch-taken stalls** baja en 1 por salto (p. ej. de 1 a 0 con resolución ID, o 2→1 con EX) | El delay slot ejecuta la instrucción siguiente al salto, ocultando 1 ciclo de penalización; **es propio de MIPS** (P&H COD §4.6/4.8: "the solution actually used by the MIPS architecture"); modelo: `penalty -= 1` |
 | V5 | Marcar **Branch Target Buffer (BTB)** | En la **2ª pasada** por un salto ya visto tomado la penalización es 0 (en un salto único, sin repetición, el efecto puede no verse) | BTB predice "tomado" para saltos ya tomados → acierto = 0 penalización (Stallings; P&H §4.8). Nota: requiere que el salto se repita (p. ej. un bucle) para apreciarlo |
+| V6 | Cambiar **Branch resuelto en** entre **ID / EX / MEM** | Cada salto tomado pasa a costar **1 / 2 / 3** burbujas; Cycles y CPI suben al elegir EX o MEM | Etapa de resolución del salto (predict-not-taken): P&H COD resuelve en **ID** (1, optimizado, por defecto) o en **MEM** (3, base); **EX (2)** es la convención WinMIPS64. Recalcula al instante |
 | V6 | (Opcional) Añadir un segundo `div`/`rem` y subir tráfico al divisor | Aparecen celdas azules **Str** (estructural) en la segunda división | El divisor **no es segmentado**: una 2ª división espera a que se libere → stall estructural (H&P apéndice C). *(verificar en la herramienta — requiere editar el programa)* |
 
 > Comprobación transversal de "recálculo instantáneo": al aplicar V1↔V2 los números de las tarjetas
@@ -293,16 +299,17 @@ Marque cada casilla y anote si coincide con la teoría.
 - [ ] **(P5)** El tooltip de la burbuja indica el registro esperado y el ciclo de disponibilidad. — ¿Coincide? Sí / No — Notas: ____
 - [ ] **(P6)** El `mul` ocupa exactamente **M1..M7** (latencia 7). — ¿Coincide? Sí / No — Notas: ____
 - [ ] **(P7)** El dependiente del `mul` espera (burbujas RAW) hasta el final de M7. — ¿Coincide? Sí / No — Notas: ____
-- [ ] **(P8)** El salto `beq t0,t0` se toma; la instrucción saltada no aparece; **Branch-taken stalls = 2**. — ¿Coincide? Sí / No — Notas: ____
+- [ ] **(P8)** El salto `beq t0,t0` se toma; la instrucción saltada no aparece; **Branch-taken stalls** sube **1 por salto** (resolución **ID = 1** por defecto). — ¿Coincide? Sí / No — Notas: ____
 - [ ] **(P9)** **WAR = 0** y **WAW = 0** (emisión en orden); **Structural = 0** (un solo mul). — ¿Coincide? Sí / No — Notas: ____
 - [ ] **(P10)** **CPI > 1**. — ¿Coincide? Sí / No — Notas: ____
 - [ ] **(P11)** `CPI = Cycles / Instructions` exacto y totales coherentes. — ¿Coincide? Sí / No — Notas: ____
-- [ ] **(P12)** El cursor ◀/▶/Live y la ventana de cajas reflejan el ocupante de cada etapa por ciclo. — ¿Coincide? Sí / No — Notas: ____
+- [ ] **(P12)** La vista arranca en **ciclo 1** (solo IF de la 1ª instrucción); **▶** avanza un ciclo y el pipeline se llena en diagonal; **⏮** rebobina a 1; **Live** muestra todo. La ventana de cajas refleja el ocupante de cada etapa por ciclo. — ¿Coincide? Sí / No — Notas: ____
 - [ ] **(V1)** Con **"No forwarding"** aparecen burbujas RAW en la cadena ALU; suben RAW/Cycles/CPI. — ¿Coincide? Sí / No — Notas: ____
 - [ ] **(V2)** Al reactivar forwarding desaparecen las burbujas de la cadena (queda la del load-use). — ¿Coincide? Sí / No — Notas: ____
 - [ ] **(V3)** Subir la latencia del multiplicador alarga M1..Mn y aumenta las burbujas del dependiente. — ¿Coincide? Sí / No — Notas: ____
-- [ ] **(V4)** **Delay slot** (en **MIPS-32**) reduce Branch-taken stalls en 1 (2→1); en RISC-V el toggle está deshabilitado. — ¿Coincide? Sí / No — Notas: ____
+- [ ] **(V4)** **Delay slot** (en **MIPS-32**) reduce Branch-taken stalls en 1 por salto (1→0 con ID, o 2→1 con EX); en RISC-V el toggle está deshabilitado. — ¿Coincide? Sí / No — Notas: ____
 - [ ] **(V5)** **BTB** anula la penalización en un salto ya visto tomado (requiere repetición). — ¿Coincide? Sí / No — Notas: ____
+- [ ] **(V6)** **Branch resuelto en** ID/EX/MEM cambia la penalización por salto a 1/2/3 burbujas (por defecto **ID = 1**, P&H). — ¿Coincide? Sí / No — Notas: ____
 - [ ] **(V6)** Un segundo `div` genera stall **estructural (Str)** (divisor no segmentado). — ¿Coincide? Sí / No — Notas: ____
 - [ ] **(R)** Cambiar la configuración **recalcula al instante** sin re-ejecutar el programa. — ¿Coincide? Sí / No — Notas: ____
 

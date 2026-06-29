@@ -20,10 +20,12 @@ import {
     type PipelineSchedule,
 } from "@/core/trace/pipelineModel.mts";
 
+type BranchStage = "ID" | "EX" | "MEM";
 interface CyclesConfig {
     forwarding: boolean;
     btb: boolean;
     delaySlot: boolean;
+    branchStage: BranchStage;
     fpAddLatency: number;
     mulLatency: number;
     divLatency: number;
@@ -32,6 +34,7 @@ const DEFAULTS: CyclesConfig = {
     forwarding: DEFAULT_PIPELINE_CONFIG.forwarding,
     btb: false,
     delaySlot: false,
+    branchStage: "ID", // P&H COD textbook: branch resolved in ID → 1-cycle penalty
     fpAddLatency: DEFAULT_PIPELINE_CONFIG.fpAddLatency,
     mulLatency: DEFAULT_PIPELINE_CONFIG.mulLatency,
     divLatency: DEFAULT_PIPELINE_CONFIG.divLatency,
@@ -40,9 +43,10 @@ const LS_KEY = "creator-cycles-config";
 const MAX_ROWS = 250;
 
 const PRESETS: Record<string, CyclesConfig> = {
-    "MIPS classic": { forwarding: true, btb: false, delaySlot: true, fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
-    "No forwarding": { forwarding: false, btb: false, delaySlot: false, fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
-    "Predicted (BTB)": { forwarding: true, btb: true, delaySlot: false, fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
+    "P&H textbook": { forwarding: true, btb: false, delaySlot: false, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
+    "MIPS classic": { forwarding: true, btb: false, delaySlot: true, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
+    "No forwarding": { forwarding: false, btb: false, delaySlot: false, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
+    "Predicted (BTB)": { forwarding: true, btb: true, delaySlot: false, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
 };
 
 export default defineComponent({
@@ -57,8 +61,8 @@ export default defineComponent({
             studentMode: false,
             presets: PRESETS,
             tip: { show: false, text: "", x: 0, y: 0 },
-            cursor: 1, // manual cycle cursor (used when not live)
-            live: true, // follow the latest executed cycle
+            cursor: 1, // current cycle (manual ▶ step, or following CREATOR's Step)
+            live: false, // false = step mode (start at cycle 1); true = show the full timeline
         };
     },
     mounted() {
@@ -69,12 +73,12 @@ export default defineComponent({
             /* ignore */
         }
         (coreEvents as any).on(DATAPATH_TRACE_EVENT, this.onChange);
-        (coreEvents as any).on("registers-reset", this.onChange);
-        this.$nextTick(() => this.scrollRight());
+        (coreEvents as any).on("registers-reset", this.onReset);
+        this.$nextTick(() => this.scrollToCursor());
     },
     beforeUnmount() {
         (coreEvents as any).off(DATAPATH_TRACE_EVENT, this.onChange);
-        (coreEvents as any).off("registers-reset", this.onChange);
+        (coreEvents as any).off("registers-reset", this.onReset);
     },
     watch: {
         config: {
@@ -115,6 +119,7 @@ export default defineComponent({
                 forwarding: this.config.forwarding,
                 btb: this.config.btb,
                 delaySlot: this.effectiveDelaySlot,
+                branchStage: this.config.branchStage,
                 fpAddLatency: this.config.fpAddLatency,
                 mulLatency: this.config.mulLatency,
                 divLatency: this.config.divLatency,
@@ -185,8 +190,33 @@ export default defineComponent({
         },
     },
     methods: {
+        // A new instruction was executed by CREATOR (one engine Step = one instruction).
+        // In step mode the cursor FOLLOWS the engine: it advances to the cycle in which
+        // the just-executed instruction enters the pipeline (its IF), so pressing CREATOR's
+        // Step visibly advances the pipeline one issue at a time. Use ▶ for a finer,
+        // cycle-by-cycle walk (IF→ID→EX→MEM→WB) within/after that.
         onChange() {
             this.version++;
+            if (!this.live) {
+                this.$nextTick(() => {
+                    const rows = this.schedule.rows;
+                    if (rows.length) this.cursor = rows[rows.length - 1].firstCycle;
+                    this.scrollToCursor();
+                });
+            }
+        },
+        // Program reset → restart the pipeline view at cycle 1 (step mode).
+        onReset() {
+            this.version++;
+            this.live = false;
+            this.cursor = 1;
+            this.$nextTick(() => this.scrollToCursor());
+        },
+        // Jump back to the first cycle (instruction 1 in IF) and step forward from there.
+        cursorToStart() {
+            this.live = false;
+            this.cursor = 1;
+            this.$nextTick(() => this.scrollToCursor());
         },
         scrollRight() {
             const el = this.$refs.scroller as HTMLElement | undefined;
@@ -303,7 +333,14 @@ export default defineComponent({
                            @change="config.delaySlot = ($event.target as HTMLInputElement).checked" />
                     Delay slot <span v-if="!isMips" class="cyc-muted">(solo MIPS)</span>
                 </label>
-                <span class="cyc-muted">Code/Data Address Bus: 10</span>
+                <label class="cyc-sel" title="Etapa donde se resuelve el salto (predict-not-taken), según P&H COD: ID=1, EX=2, MEM=3 burbujas">
+                    Branch resuelto en
+                    <select v-model="config.branchStage">
+                        <option value="ID">ID (1 ciclo · P&H)</option>
+                        <option value="EX">EX (2 ciclos · WinMIPS64)</option>
+                        <option value="MEM">MEM (3 ciclos · base)</option>
+                    </select>
+                </label>
             </div>
         </div>
 
@@ -348,11 +385,12 @@ export default defineComponent({
             <!-- Cycle-by-cycle cursor (WinMIPS64-style: advance one clock at a time) -->
             <div class="cyc-cursor">
                 <span class="cyc-cursor-lbl">Cycle step</span>
+                <button class="cyc-cbtn" :disabled="cursorCycle <= 1" title="Back to cycle 1 (IF of instr. 1)" @click="cursorToStart">⏮</button>
                 <button class="cyc-cbtn" :disabled="cursorCycle <= 1" title="Previous cycle" @click="stepCursor(-1)">◀</button>
                 <span class="cyc-cnow">{{ cursorCycle }} / {{ displayMaxCycle }}</span>
-                <button class="cyc-cbtn" :disabled="cursorCycle >= displayMaxCycle" title="Next cycle" @click="stepCursor(1)">▶</button>
-                <button class="cyc-cbtn cyc-clive" :class="{ active: live }" title="Follow the latest cycle" @click="goLive">Live</button>
-                <span class="cyc-cursor-hint">advance one clock and watch the pipeline fill</span>
+                <button class="cyc-cbtn" :disabled="cursorCycle >= displayMaxCycle" title="Next clock cycle" @click="stepCursor(1)">▶</button>
+                <button class="cyc-cbtn cyc-clive" :class="{ active: live }" title="Show the whole timeline" @click="goLive">Live</button>
+                <span class="cyc-cursor-hint">▶ = un ciclo de reloj (IF→ID→EX→MEM→WB); el Step de CREATOR avanza una instrucción (entra en IF); Live = todo</span>
             </div>
 
             <!-- Pipeline window: which instruction is in each stage at the cursor cycle -->
@@ -429,6 +467,8 @@ export default defineComponent({
 .cyc-muted { color: rgba(var(--bs-body-color-rgb), 0.5); }
 .cyc-muted i { font-weight: 400; }
 .cyc-chk.disabled { opacity: 0.5; cursor: not-allowed; }
+.cyc-sel { display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; }
+.cyc-sel select { font-size: 0.72rem; padding: 1px 4px; border-radius: 4px; }
 .cyc-preset, .cyc-reset {
     border: 1px solid rgba(var(--bs-secondary-rgb), 0.4); background: rgba(var(--bs-secondary-rgb), 0.1);
     color: rgba(var(--bs-body-color-rgb), 0.9); border-radius: 4px; padding: 2px 9px; cursor: pointer;

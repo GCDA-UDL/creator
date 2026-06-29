@@ -54,6 +54,14 @@ export interface PipelineConfig {
     btb?: boolean;
     /** Delay slot: the instruction after a branch always issues (hides 1 penalty cycle). */
     delaySlot?: boolean;
+    /**
+     * Pipeline stage in which a conditional branch is resolved (predict-not-taken).
+     * This sets the taken-branch penalty, following Patterson & Hennessy COD:
+     *   - "ID"  → 1 bubble  (the textbook optimized pipeline; resolve in decode), DEFAULT.
+     *   - "EX"  → 2 bubbles (WinMIPS64-style intermediate).
+     *   - "MEM" → 3 bubbles (the un-optimized base pipeline).
+     */
+    branchStage?: "ID" | "EX" | "MEM";
 }
 
 export const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
@@ -63,6 +71,7 @@ export const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
     divLatency: 24,
     btb: false,
     delaySlot: false,
+    branchStage: "ID", // P&H COD textbook default: branch resolved in ID → 1-cycle penalty
 };
 
 export interface PipeCell {
@@ -307,14 +316,17 @@ export function schedulePipeline(
         // this one stalls in ID), then apply the branch penalty (resolved in EX).
         let nf = Math.max(ifCycle + 1, exStart - 1);
         if (instr.isBranch) {
+            // taken-branch penalty = stage where the branch is resolved (predict-not-taken):
+            // ID→1, EX→2, MEM→3 (P&H COD). Default "ID" = 1, the textbook optimized pipeline.
+            const basePenalty = cfg.branchStage === "MEM" ? 3 : cfg.branchStage === "EX" ? 2 : 1;
             const predicted = !!cfg.btb && btbSet.has(instr.pc);
             let penalty = 0;
             let mispred = false;
             if (instr.branchTaken) {
-                penalty = predicted ? 0 : 2; // BTB correct-taken = 0; else flush
+                penalty = predicted ? 0 : basePenalty; // BTB correct-taken = 0; else flush
                 btbSet.add(instr.pc);
             } else if (predicted) {
-                penalty = 2; // predicted taken but fell through → misprediction
+                penalty = basePenalty; // predicted taken but fell through → misprediction
                 mispred = true;
             }
             if (cfg.delaySlot && penalty > 0) penalty -= 1; // delay slot hides one bubble
