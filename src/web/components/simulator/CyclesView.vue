@@ -9,6 +9,7 @@ recomputes the diagram INSTANTLY without re-running the program.
 <script lang="ts">
 import { defineComponent } from "vue";
 import { coreEvents } from "@/core/events.mts";
+import { architecture } from "@/core/core.mjs";
 import { DATAPATH_TRACE_EVENT } from "@/core/trace/datapathTrace.mts";
 import { getExecutionHistory } from "@/core/trace/executionHistory.mts";
 import {
@@ -94,6 +95,17 @@ export default defineComponent({
         },
     },
     computed: {
+        /** Delay slot is a MIPS feature; RISC-V and ARM dropped it (P&H COD-RISCV §4.6
+         *  Elaboration: "the solution actually used by the MIPS architecture"). Only MIPS
+         *  exposes/applies it here. */
+        isMips(): boolean {
+            void this.version;
+            return String((architecture as any)?.config?.plugin ?? "").toLowerCase() === "mips";
+        },
+        /** Delay slot only takes effect on MIPS, regardless of a stored MIPS-preset value. */
+        effectiveDelaySlot(): boolean {
+            return this.isMips && this.config.delaySlot;
+        },
         schedule(): PipelineSchedule {
             // touch `version` so the (impure) history read recomputes on new traces
             void this.version;
@@ -102,7 +114,7 @@ export default defineComponent({
                 ...DEFAULT_PIPELINE_CONFIG,
                 forwarding: this.config.forwarding,
                 btb: this.config.btb,
-                delaySlot: this.config.delaySlot,
+                delaySlot: this.effectiveDelaySlot,
                 fpAddLatency: this.config.fpAddLatency,
                 mulLatency: this.config.mulLatency,
                 divLatency: this.config.divLatency,
@@ -286,7 +298,11 @@ export default defineComponent({
             </div>
             <div class="cyc-row">
                 <label class="cyc-chk"><input type="checkbox" v-model="config.btb" /> Branch Target Buffer</label>
-                <label class="cyc-chk"><input type="checkbox" v-model="config.delaySlot" /> Delay slot</label>
+                <label class="cyc-chk" :class="{ disabled: !isMips }" :title="isMips ? '' : 'El delay slot es propio de MIPS; RISC-V y ARM no lo tienen'">
+                    <input type="checkbox" :checked="effectiveDelaySlot" :disabled="!isMips"
+                           @change="config.delaySlot = ($event.target as HTMLInputElement).checked" />
+                    Delay slot <span v-if="!isMips" class="cyc-muted">(solo MIPS)</span>
+                </label>
                 <span class="cyc-muted">Code/Data Address Bus: 10</span>
             </div>
         </div>
@@ -412,6 +428,7 @@ export default defineComponent({
 .cyc-row input[type="number"] { width: 56px; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(var(--bs-secondary-rgb), 0.4); }
 .cyc-muted { color: rgba(var(--bs-body-color-rgb), 0.5); }
 .cyc-muted i { font-weight: 400; }
+.cyc-chk.disabled { opacity: 0.5; cursor: not-allowed; }
 .cyc-preset, .cyc-reset {
     border: 1px solid rgba(var(--bs-secondary-rgb), 0.4); background: rgba(var(--bs-secondary-rgb), 0.1);
     color: rgba(var(--bs-body-color-rgb), 0.9); border-radius: 4px; padding: 2px 9px; cursor: pointer;

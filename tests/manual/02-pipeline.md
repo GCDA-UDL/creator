@@ -273,7 +273,7 @@ Confirme el sentido del cambio, no sólo que cambie.
 | V1 | Preset **"No forwarding"** (o desmarcar *Enable forwarding*) | La cadena RAW ALU-ALU (filas `addi t1`/`t2`/`add t3`) **pasa a generar burbujas azules RAW**; **RAW stalls sube**, **Cycles sube**, **CPI sube**; sin re-ejecutar | Sin bypass, el valor sólo está listo tras WB → hasta 2-3 burbujas por dependencia RAW (P&H §4.7). Demuestra el valor del forwarding |
 | V2 | Volver a **forwarding ON** | Las burbujas de la cadena RAW **desaparecen**; queda **1** burbuja RAW en el load-use; Cycles y CPI bajan | El load-use es la **única** burbuja que el forwarding no elimina (dato en MEM) (P&H §4.7) |
 | V3 | Subir **Multiplier latency** de 7 a, p. ej., 10 | La fila `mul` pasa a ocupar **M1..M10**; el dependiente `addi a1,a0` espera **más** burbujas; Cycles y CPI suben | La latencia de la unidad multiciclo determina cuándo está disponible el resultado (H&P apéndice C) |
-| V4 | Marcar **Delay slot** (con salto tomado) | **Branch-taken stalls** baja en 1 (de 2 a 1) | El delay slot ejecuta la instrucción siguiente al salto, ocultando 1 ciclo de penalización (P&H §4.8); modelo: `penalty -= 1` |
+| V4 | Marcar **Delay slot** (**solo MIPS-32**: en RISC-V/ARM el toggle está **deshabilitado** — esas ISA no tienen delay slot) | **Branch-taken stalls** baja en 1 (de 2 a 1) | El delay slot ejecuta la instrucción siguiente al salto, ocultando 1 ciclo de penalización; **es propio de MIPS** (P&H COD §4.6/4.8: "the solution actually used by the MIPS architecture"); modelo: `penalty -= 1` |
 | V5 | Marcar **Branch Target Buffer (BTB)** | En la **2ª pasada** por un salto ya visto tomado la penalización es 0 (en un salto único, sin repetición, el efecto puede no verse) | BTB predice "tomado" para saltos ya tomados → acierto = 0 penalización (Stallings; P&H §4.8). Nota: requiere que el salto se repita (p. ej. un bucle) para apreciarlo |
 | V6 | (Opcional) Añadir un segundo `div`/`rem` y subir tráfico al divisor | Aparecen celdas azules **Str** (estructural) en la segunda división | El divisor **no es segmentado**: una 2ª división espera a que se libere → stall estructural (H&P apéndice C). *(verificar en la herramienta — requiere editar el programa)* |
 
@@ -301,7 +301,7 @@ Marque cada casilla y anote si coincide con la teoría.
 - [ ] **(V1)** Con **"No forwarding"** aparecen burbujas RAW en la cadena ALU; suben RAW/Cycles/CPI. — ¿Coincide? Sí / No — Notas: ____
 - [ ] **(V2)** Al reactivar forwarding desaparecen las burbujas de la cadena (queda la del load-use). — ¿Coincide? Sí / No — Notas: ____
 - [ ] **(V3)** Subir la latencia del multiplicador alarga M1..Mn y aumenta las burbujas del dependiente. — ¿Coincide? Sí / No — Notas: ____
-- [ ] **(V4)** **Delay slot** reduce Branch-taken stalls en 1 (2→1). — ¿Coincide? Sí / No — Notas: ____
+- [ ] **(V4)** **Delay slot** (en **MIPS-32**) reduce Branch-taken stalls en 1 (2→1); en RISC-V el toggle está deshabilitado. — ¿Coincide? Sí / No — Notas: ____
 - [ ] **(V5)** **BTB** anula la penalización en un salto ya visto tomado (requiere repetición). — ¿Coincide? Sí / No — Notas: ____
 - [ ] **(V6)** Un segundo `div` genera stall **estructural (Str)** (divisor no segmentado). — ¿Coincide? Sí / No — Notas: ____
 - [ ] **(R)** Cambiar la configuración **recalcula al instante** sin re-ejecutar el programa. — ¿Coincide? Sí / No — Notas: ____

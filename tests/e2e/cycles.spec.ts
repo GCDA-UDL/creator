@@ -105,4 +105,24 @@ test.describe("Cycle timeline (pipeline)", () => {
         expect(await cyclesCount(page)).toBeGreaterThan(0);
         await page.locator(".cyc-view").screenshot({ path: "tests/e2e/__screenshots__/riscv-cycles.png" });
     });
+
+    const delaySlot = (p: Page) =>
+        p.locator(".cyc-settings label", { hasText: "Delay slot" }).locator('input[type="checkbox"]');
+
+    test("delay slot is enabled on MIPS (MIPS has a branch delay slot)", async ({ page }) => {
+        await selectArchitecture(page, "MIPS-32");
+        await loadFirstExampleAndRun(page);
+        await openCycles(page);
+        await page.getByRole("button", { name: /Pipeline config/ }).click();
+        await expect(delaySlot(page)).toBeEnabled();
+    });
+
+    test("delay slot is disabled on RISC-V (RV/ARM dropped the delay slot)", async ({ page }) => {
+        await selectArchitecture(page, "RISC-V (RV32IMFD)");
+        await loadFirstExampleAndRun(page);
+        await openCycles(page);
+        await page.getByRole("button", { name: /Pipeline config/ }).click();
+        await expect(delaySlot(page)).toBeDisabled();
+        await expect(page.locator(".cyc-settings")).toContainText("solo MIPS");
+    });
 });
