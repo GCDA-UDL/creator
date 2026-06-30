@@ -93,6 +93,26 @@ test.describe("Datapath view (per-architecture)", () => {
             .screenshot({ path: "tests/e2e/__screenshots__/custom-datapath.png" });
     });
 
+    test("Schematic walks the instruction phases (IF→ID→…); ⏮ and Todo work", async ({ page }) => {
+        await selectArchitecture(page, "RISC-V (RV32IMFD)");
+        await page.locator('[title="Examples"]').click();
+        await page.locator(".modal.show .list-group-item").first().click();
+        await openSchematic(page); // mount the trace listener before stepping
+
+        // Execute one instruction while the Schematic is open → phase resets to IF.
+        await page.getByRole("button", { name: "Step" }).click();
+        await page.waitForTimeout(150);
+        const now = page.locator(".dp-phase-now");
+        await expect(now).toContainText("IF"); // starts at fetch
+        // only the IF stage is highlighted (cumulative reveal begins at IF)
+        await page.getByRole("button", { name: "▶" }).click();
+        await expect(now).toContainText("ID"); // ▶ advances one phase (decode)
+        await page.getByRole("button", { name: "⏮" }).click();
+        await expect(now).toContainText("IF"); // ⏮ rewinds to fetch
+        await page.getByRole("button", { name: "Todo" }).click();
+        await expect(now).toContainText("todas"); // single-cycle: all phases at once
+    });
+
     test("stepping a loaded example shows live operand values", async ({ page }) => {
         await selectArchitecture(page, "RISC-V (RV32IMFD)");
 

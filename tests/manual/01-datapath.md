@@ -123,6 +123,7 @@ flowchart LR
 | Cargar ejemplo | Botón **Examples** → en el desplegable de CONJUNTOS elegir **"UdL · Test Datapath"** → clicar **"Datapath · todos los formatos"** |
 | Vista | Pestaña **Datapath** → botón de modo **Schematic** (segundo de los 6: *Blocks · Schematic · Cycles · Cache · Coherence · Virtual mem.*) |
 | Ejecución | **Step** (paso a paso, una instrucción) — imprescindible para esta prueba; **Run** ejecuta todo de golpe |
+| Recorrido por fases | Tras cada **Step**, la barra **Fase** permite recorrer las fases de **esa** instrucción: ⏮ (vuelve a IF) · ◀/▶ (fase anterior/siguiente: **IF→ID→EX→MEM→WB**, el camino activo se ilumina acumulativamente) · **Todo** (mono-ciclo: todas las fases a la vez). *Recuerda: el datapath es mono-ciclo (las 5 fases ocurren en 1 ciclo); las "fases" son los pasos conceptuales del ciclo de Von Neumann que se recorren con ▶.* |
 
 **Configuración por defecto relevante de la vista (panel de engranaje "Display"):**
 

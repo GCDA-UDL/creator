@@ -62,6 +62,10 @@ export default defineComponent({
             studentMode: false,
             explain: null as string | null,
             presets: PRESETS,
+            // Phase stepper: walk the current instruction's phases (IF→ID→EX→MEM→WB)
+            // one at a time. "allPhases" = the single-cycle view (everything lit at once).
+            phaseCursor: 1,
+            allPhases: false,
         };
     },
     mounted() {
@@ -83,6 +87,11 @@ export default defineComponent({
                 }
             },
         },
+        // New instruction executed by CREATOR (engine Step) → restart its phases at IF
+        // (unless the user chose the all-phases / single-cycle view).
+        trace() {
+            if (!this.allPhases) this.phaseCursor = 1;
+        },
     },
     computed: {
         spec(): DatapathSpec | null {
@@ -91,6 +100,27 @@ export default defineComponent({
         stages(): Set<string> {
             const t = this.trace;
             return new Set(t ? t.microops.map(m => m.stage) : []);
+        },
+        /** Phases this instruction goes through, in canonical order. */
+        phases(): string[] {
+            return ["IF", "ID", "EX", "MEM", "WB"].filter(s => this.stages.has(s));
+        },
+        phaseCount(): number {
+            return this.phases.length;
+        },
+        currentPhase(): string {
+            if (this.phases.length === 0) return "";
+            const n = Math.min(Math.max(this.phaseCursor, 1), this.phases.length);
+            return this.phases[n - 1];
+        },
+        /** Highlighted stages: cumulative up to the cursor (step mode), or all (single-cycle). */
+        activeStages(): Set<string> {
+            if (this.allPhases || !this.trace) return this.stages;
+            const n = Math.min(Math.max(this.phaseCursor, 1), this.phases.length);
+            return new Set(this.phases.slice(0, n));
+        },
+        exReached(): boolean {
+            return this.activeStages.has("EX");
         },
         op(): Record<string, string> {
             return this.trace?.operands ?? {};
@@ -148,7 +178,18 @@ export default defineComponent({
     },
     methods: {
         act(stage: string): boolean {
-            return this.stages.has(stage);
+            return this.activeStages.has(stage);
+        },
+        stepPhase(delta: number) {
+            this.allPhases = false;
+            this.phaseCursor = Math.min(Math.max(this.phaseCursor + delta, 1), Math.max(1, this.phaseCount));
+        },
+        phaseToStart() {
+            this.allPhases = false;
+            this.phaseCursor = 1;
+        },
+        showAllPhases() {
+            this.allPhases = true;
         },
         valLabel(role: string): string {
             const name = this.op[role];
@@ -190,6 +231,17 @@ export default defineComponent({
             <button class="dp-gear" :class="{ active: studentMode }" title="Student mode: click the ? marks to learn each part" @click="studentMode = !studentMode; explain = null">
                 <font-awesome-icon :icon="['fas', 'graduation-cap']" /> Student
             </button>
+        </div>
+
+        <!-- Phase stepper: walk the current instruction's phases IF→ID→EX→MEM→WB -->
+        <div v-if="spec && trace" class="dp-phase">
+            <span class="dp-phase-lbl">Fase</span>
+            <button class="dp-pbtn" :disabled="!allPhases && phaseCursor <= 1" title="Primera fase (IF)" @click="phaseToStart">⏮</button>
+            <button class="dp-pbtn" :disabled="allPhases || phaseCursor <= 1" title="Fase anterior" @click="stepPhase(-1)">◀</button>
+            <span class="dp-phase-now">{{ allPhases ? "todas" : currentPhase + " · " + phaseCursor + "/" + phaseCount }}</span>
+            <button class="dp-pbtn" :disabled="allPhases || phaseCursor >= phaseCount" title="Fase siguiente" @click="stepPhase(1)">▶</button>
+            <button class="dp-pbtn dp-clive" :class="{ active: allPhases }" title="Mostrar todas las fases a la vez (vista mono-ciclo)" @click="showAllPhases">Todo</button>
+            <span class="dp-phase-hint">mono-ciclo: las fases ocurren en 1 ciclo; ▶ recorre fetch→decode→execute→mem→write-back de esta instrucción</span>
         </div>
 
         <!-- Student-mode help box -->
@@ -304,7 +356,7 @@ export default defineComponent({
 
             <!-- Optional execution units (shown per ISA extensions) -->
             <g class="dp-units">
-                <g v-for="u in visibleUnits" :key="u.id" class="unit" :class="[u.fillClass, { 'unit-on': unit === u.unit }]">
+                <g v-for="u in visibleUnits" :key="u.id" class="unit" :class="[u.fillClass, { 'unit-on': unit === u.unit && exReached }]">
                     <text :x="u.ulblPos.x" :y="u.ulblPos.y" class="ulbl">{{ u.ulbl }}</text>
                     <rect :x="u.rect.x" :y="u.rect.y" :width="u.rect.w" :height="u.rect.h" :rx="u.rect.rx" />
                     <text :x="u.labelPos.x" :y="u.labelPos.y">{{ u.label }}</text>
@@ -312,7 +364,7 @@ export default defineComponent({
             </g>
 
             <!-- Branch-taken path -->
-            <g v-if="branched && spec.branchPath" class="dp-branch">
+            <g v-if="branched && exReached && spec.branchPath" class="dp-branch">
                 <polyline :points="spec.branchPath.points" />
                 <text :x="spec.branchPath.x" :y="spec.branchPath.y" class="note val">branch taken</text>
             </g>
@@ -350,6 +402,21 @@ export default defineComponent({
     background: rgba(var(--bs-primary-rgb), 0.15);
     color: rgba(var(--bs-primary-rgb), 1);
 }
+
+/* Phase stepper */
+.dp-phase { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dp-phase-lbl { font-size: 0.72rem; font-weight: 700; color: rgba(var(--bs-body-color-rgb), 0.8); }
+.dp-pbtn {
+    border: 1px solid rgba(var(--bs-secondary-rgb), 0.4);
+    background: rgba(var(--bs-secondary-rgb), 0.1);
+    color: rgba(var(--bs-body-color-rgb), 0.9);
+    border-radius: 4px; padding: 2px 10px; cursor: pointer; font-weight: 700; font-size: 0.8rem;
+}
+.dp-pbtn:hover:not(:disabled) { background: rgba(var(--bs-primary-rgb), 0.15); color: rgba(var(--bs-primary-rgb), 1); }
+.dp-pbtn:disabled { opacity: 0.4; cursor: default; }
+.dp-clive.active { background: rgba(var(--bs-primary-rgb), 0.85); color: #fff; border-color: transparent; }
+.dp-phase-now { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 64px; text-align: center; font-size: 0.78rem; }
+.dp-phase-hint { font-size: 0.7rem; color: rgba(var(--bs-body-color-rgb), 0.55); font-style: italic; }
 
 /* Settings panel */
 .dp-settings {
