@@ -132,6 +132,22 @@ test.describe("Cycle timeline (pipeline)", () => {
         expect((await parse())[0]).toBe(1);
     });
 
+    test("forwarding (bypass) cells are marked on the grid", async ({ page }) => {
+        await selectArchitecture(page, "RISC-V (RV32IMFD)");
+        // pipeline "riesgos" program has RAW chains + a load-use → forwarding edges
+        await page.locator('[title="Examples"]').click();
+        const modal = page.locator(".modal.show");
+        await modal.locator(".dropdown-toggle").click();
+        await page.locator(".dropdown-item", { hasText: "UdL · Test Pipeline (Cycles)" }).click();
+        await modal.locator(".list-group-item", { hasText: "riesgos" }).click();
+        await page.getByRole("button", { name: "Run" }).click();
+        await page.waitForTimeout(700);
+        await openCycles(page); // switches to Live (full grid)
+
+        expect(await page.locator(".stg.fwd-src").count()).toBeGreaterThan(0);
+        await expect(page.locator(".cyc-legend")).toContainText("forward");
+    });
+
     const delaySlot = (p: Page) =>
         p.locator(".cyc-settings label", { hasText: "Delay slot" }).locator('input[type="checkbox"]');
 

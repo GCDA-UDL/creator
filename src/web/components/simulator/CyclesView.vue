@@ -188,6 +188,25 @@ export default defineComponent({
         cpiText(): string {
             return this.stats.instructions > 0 ? this.stats.cpi.toFixed(3) : "—";
         },
+        forwards() {
+            return this.schedule.forwards;
+        },
+        fwdSrc(): Set<string> {
+            return new Set(this.forwards.map(f => f.fromIndex + ":" + f.fromCycle));
+        },
+        fwdDst(): Set<string> {
+            return new Set(this.forwards.map(f => f.toIndex + ":" + f.toCycle));
+        },
+        /** Tooltip text per cell key (index:cycle) describing the forward(s). */
+        fwdInfo(): Map<string, string> {
+            const m = new Map<string, string[]>();
+            const push = (k: string, s: string) => { (m.get(k) ?? m.set(k, []).get(k)!).push(s); };
+            for (const f of this.forwards) {
+                push(f.fromIndex + ":" + f.fromCycle, `→ forwarding ${f.reg} a la instrucción ${f.toIndex + 1}`);
+                push(f.toIndex + ":" + f.toCycle, `← ${f.reg} reenviado desde la instrucción ${f.fromIndex + 1} (${f.fromStage})${f.loadUse ? " — load-use: 1 burbuja" : ""}`);
+            }
+            return new Map([...m].map(([k, v]) => [k, v.join("\n")]));
+        },
     },
     methods: {
         // A new instruction was executed by CREATOR (one engine Step = one instruction).
@@ -217,6 +236,15 @@ export default defineComponent({
             this.live = false;
             this.cursor = 1;
             this.$nextTick(() => this.scrollToCursor());
+        },
+        isFwdSrc(gr: any, c: number): boolean {
+            return this.fwdSrc.has(gr.instr.index + ":" + c);
+        },
+        isFwdDst(gr: any, c: number): boolean {
+            return this.fwdDst.has(gr.instr.index + ":" + c);
+        },
+        fwdTitle(gr: any, c: number): string {
+            return this.fwdInfo.get(gr.instr.index + ":" + c) ?? "";
         },
         scrollRight() {
             const el = this.$refs.scroller as HTMLElement | undefined;
@@ -369,6 +397,8 @@ export default defineComponent({
                 <span class="lg c-if">IF</span><span class="lg c-id">ID</span><span class="lg c-ex">EX</span>
                 <span class="lg c-mul">M*</span><span class="lg c-fpadd">A*</span><span class="lg c-div">DIV</span>
                 <span class="lg c-mem">MEM</span><span class="lg c-wb">WB</span><span class="lg c-stall">stall</span>
+                <span class="lg lg-fwd">forward</span>
+                <span v-if="forwards.length" class="lg-fwdn">{{ forwards.length }} forwarding(s) — pasa el ratón por las celdas marcadas</span>
             </div>
 
             <p class="cyc-cap">
@@ -428,7 +458,10 @@ export default defineComponent({
                                         @mousemove="moveTip($event)"
                                         @mouseleave="hideTip"
                                     >{{ studentMode && cellAt(gr, c).waitFor ? cellAt(gr, c).waitFor : cellAt(gr, c).stallKind }}</div>
-                                    <div v-else class="stg" :class="[stageClass(cellAt(gr, c).stage), { now: c === cursorCycle }]">{{ cellAt(gr, c).stage }}</div>
+                                    <div v-else class="stg"
+                                        :class="[stageClass(cellAt(gr, c).stage), { now: c === cursorCycle, 'fwd-src': isFwdSrc(gr, c), 'fwd-dst': isFwdDst(gr, c) }]"
+                                        :title="fwdTitle(gr, c)"
+                                    >{{ cellAt(gr, c).stage }}</div>
                                 </template>
                             </td>
                         </tr>
@@ -487,6 +520,8 @@ export default defineComponent({
 
 .cyc-legend { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
 .lg { font-size: 0.62rem; font-weight: 800; padding: 1px 7px; border-radius: 4px; color: #fff; }
+.lg-fwd { font-size: 0.62rem; font-weight: 800; padding: 1px 7px; border-radius: 4px; color: #2e7d32; border-bottom: 3px solid #2e7d32; }
+.lg-fwdn { font-size: 0.66rem; color: rgba(var(--bs-body-color-rgb), 0.6); font-style: italic; }
 
 .cyc-trunc { font-size: 0.72rem; color: rgba(var(--bs-body-color-rgb), 0.6); margin: 0; }
 .cyc-cap { font-size: 0.72rem; color: rgba(var(--bs-body-color-rgb), 0.6); margin: 0; line-height: 1.4; }
@@ -505,6 +540,11 @@ export default defineComponent({
 .cyc-cnow { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 56px; text-align: center; font-size: 0.78rem; }
 .cyc-cursor-hint { font-size: 0.7rem; color: rgba(var(--bs-body-color-rgb), 0.55); font-style: italic; }
 .stg.now { outline: 2px solid rgba(var(--bs-body-color-rgb), 0.85); outline-offset: -2px; filter: brightness(1.1); }
+/* Forwarding (bypass) endpoints: green bar at the bottom of the producer (source),
+   at the top of the consumer's EX (destination). Hover the cell for details. */
+.stg.fwd-src { box-shadow: inset 0 -4px 0 #2e7d32; cursor: help; }
+.stg.fwd-dst { box-shadow: inset 0 4px 0 #2e7d32; cursor: help; }
+.stg.fwd-src.fwd-dst { box-shadow: inset 0 -4px 0 #2e7d32, inset 0 4px 0 #2e7d32; }
 .cyc-cnum.now { color: rgba(var(--bs-primary-rgb), 1); font-weight: 800; }
 
 /* Pipeline window (box row at the cursor cycle) */

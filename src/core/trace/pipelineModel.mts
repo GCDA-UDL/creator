@@ -105,10 +105,22 @@ export interface PipelineStats {
     codeSize: number;
 }
 
+/** A data-forwarding (bypass) edge: a producer's result reused by a later consumer. */
+export interface Forward {
+    reg: string;
+    fromIndex: number; // producing instruction (row index)
+    fromCycle: number; // cycle the value leaves the producer (end of EX, or MEM for loads)
+    fromStage: string; // "EX" | "M7" | … | "MEM"
+    toIndex: number; // consuming instruction
+    toCycle: number; // the consumer's EX cycle that receives the bypassed value
+    loadUse: boolean; // load→use (the bypass still costs 1 bubble)
+}
+
 export interface PipelineSchedule {
     rows: PipeRow[];
     stats: PipelineStats;
     maxCycle: number;
+    forwards: Forward[];
 }
 
 /** True for the architectural zero register across the ISAs CREATOR ships. */
@@ -205,6 +217,9 @@ export function schedulePipeline(
     const rows: PipeRow[] = [];
     const regReady = new Map<string, number>(); // earliest cycle a consumer's EX can use the value
     const pendingWrite = new Map<string, number>(); // last writer's WB cycle per register (for WAW)
+    const forwards: Forward[] = [];
+    // latest writer per register, for detecting bypass (forwarding) edges
+    const lastWriter = new Map<string, { index: number; fromCycle: number; fromStage: string; wbCycle: number }>();
     const wbBusy = new Set<number>();
     const btbSet = new Set<string>(); // branch PCs seen taken (Branch Target Buffer)
     const pcs = new Set<string>();
@@ -295,6 +310,31 @@ export function schedulePipeline(
             pendingWrite.set(w, wbCycle);
         }
 
+        // Forwarding (bypass) edges: a still-in-flight producer feeds this EX, so the
+        // value is taken from the pipeline (not the register file). Detected against the
+        // PREVIOUS writers (before recording this instruction's own writes below).
+        if (cfg.forwarding) {
+            for (const r of instr.reads) {
+                const w = lastWriter.get(r);
+                if (w && w.index !== instr.index && w.wbCycle >= exStart) {
+                    forwards.push({
+                        reg: r,
+                        fromIndex: w.index, fromCycle: w.fromCycle, fromStage: w.fromStage,
+                        toIndex: instr.index, toCycle: exStart,
+                        loadUse: w.fromStage === "MEM",
+                    });
+                }
+            }
+        }
+        for (const w of instr.writes) {
+            lastWriter.set(w, {
+                index: instr.index,
+                fromCycle: instr.isLoad ? memCycle : exEnd,
+                fromStage: instr.isLoad ? "MEM" : stages[stages.length - 1],
+                wbCycle,
+            });
+        }
+
         // Build the row cells.
         const cells: PipeCell[] = [
             { cycle: ifCycle, stage: "IF", stalled: false },
@@ -353,5 +393,5 @@ export function schedulePipeline(
         branchMispredStalls,
         codeSize: pcs.size,
     };
-    return { rows, stats, maxCycle };
+    return { rows, stats, maxCycle, forwards };
 }

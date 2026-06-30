@@ -67,6 +67,32 @@ describe("schedulePipeline — núcleo", () => {
         expect(s.stats.rawStalls).toBe(1);
     });
 
+    it("forwarding ON: ALU→ALU RAW yields a bypass edge (EX→EX) and no stall", () => {
+        const s = schedulePipeline([I({ writes: ["x5"] }), I({ reads: ["x5"], writes: ["x6"] })], cfg({ forwarding: true }));
+        expect(s.stats.rawStalls).toBe(0);
+        const f = s.forwards.find(e => e.reg === "x5");
+        expect(f).toBeTruthy();
+        expect(f!.toIndex).toBe(f!.fromIndex + 1); // consumer is the next instruction
+        expect(f!.fromStage).toBe("EX");
+        expect(f!.loadUse).toBe(false);
+    });
+
+    it("load-use forward comes from MEM and is flagged loadUse", () => {
+        const s = schedulePipeline(
+            [I({ isLoad: true, writes: ["x5"], mnemonic: "lw" }), I({ reads: ["x5"], writes: ["x6"] })],
+            cfg({ forwarding: true }),
+        );
+        const f = s.forwards.find(e => e.reg === "x5");
+        expect(f).toBeTruthy();
+        expect(f!.fromStage).toBe("MEM");
+        expect(f!.loadUse).toBe(true);
+    });
+
+    it("no forwarding edges when forwarding is OFF", () => {
+        const s = schedulePipeline([I({ writes: ["x5"] }), I({ reads: ["x5"] })], cfg({ forwarding: false }));
+        expect(s.forwards.length).toBe(0);
+    });
+
     it("two divides → structural stall + a 'Str' cell", () => {
         const s = schedulePipeline(
             [I({ unit: "div", mnemonic: "div", writes: ["x1"] }), I({ unit: "div", mnemonic: "div", writes: ["x4"] })],

@@ -126,6 +126,12 @@ flowchart TD
 > entre un productor ALU y un productor LOAD.
 > *Fuente: P&H COD-RISCV, §4.7 ("Data Hazards: Forwarding versus Stalling") y §4.8 (control).*
 
+> **Visualización del forwarding en la rejilla.** Cada **bypass** se marca con una barra **verde**: en
+> la celda **origen** (salida de **EX** del productor, o **MEM** para un `lw`) abajo, y en la celda
+> **destino** (la **EX** del consumidor) arriba. La leyenda muestra el **nº de forwarding(s)**; al pasar
+> el ratón por una celda marcada se indica el **registro** reenviado y entre qué instrucciones. Con
+> *forwarding* desactivado desaparecen las barras y aparecen burbujas **RAW**.
+
 En el modelo (`schedulePipeline`), un registro escrito queda disponible para un consumidor en:
 
 | Caso | Forwarding ON | Forwarding OFF |
