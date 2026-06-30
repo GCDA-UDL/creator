@@ -8,7 +8,7 @@ optional M/FPU units. Appearance is customisable via a gear panel (localStorage)
 -->
 <script lang="ts">
 import { defineComponent, type PropType } from "vue";
-import type { DatapathTrace } from "@/core/trace/datapathTrace.mts";
+import { deriveControlSignals, type DatapathTrace } from "@/core/trace/datapathTrace.mts";
 import { resolveDatapathSpec } from "./datapath/index";
 import type { DatapathSpec } from "./datapath/spec";
 
@@ -66,6 +66,7 @@ export default defineComponent({
             // one at a time. "allPhases" = the single-cycle view (everything lit at once).
             phaseCursor: 1,
             allPhases: false,
+            showControl: true, // show the control-signal strip (RegWrite, ALUSrc, …)
         };
     },
     mounted() {
@@ -122,6 +123,13 @@ export default defineComponent({
         exReached(): boolean {
             return this.activeStages.has("EX");
         },
+        /** Control signals (P&H) for the current instruction, derived from the mnemonic. */
+        controlSignals(): { name: string; on: boolean }[] {
+            if (!this.trace) return [];
+            const s = deriveControlSignals(this.trace.asm);
+            const CTRL: (keyof typeof s)[] = ["RegWrite", "ALUSrc", "MemRead", "MemWrite", "MemToReg", "Branch"];
+            return CTRL.map(k => ({ name: k, on: s[k] === 1 }));
+        },
         op(): Record<string, string> {
             return this.trace?.operands ?? {};
         },
@@ -129,7 +137,9 @@ export default defineComponent({
             return this.trace?.operandValues ?? {};
         },
         aluSrc(): boolean {
-            return Number(this.trace?.signals?.ALUSrc ?? 0) > 0;
+            // Derived from the mnemonic (robust) rather than CREATOR's coarse type,
+            // so the ALU-source MUX shows "imm" for addi/loads/stores per P&H.
+            return deriveControlSignals(this.trace?.asm ?? "").ALUSrc === 1;
         },
         branched(): boolean {
             return this.trace?.branchTaken === true;
@@ -231,6 +241,18 @@ export default defineComponent({
             <button class="dp-gear" :class="{ active: studentMode }" title="Student mode: click the ? marks to learn each part" @click="studentMode = !studentMode; explain = null">
                 <font-awesome-icon :icon="['fas', 'graduation-cap']" /> Student
             </button>
+            <button class="dp-gear" :class="{ active: showControl }" title="Mostrar las señales de control (RegWrite, ALUSrc, …) que genera la unidad de control" @click="showControl = !showControl">
+                <font-awesome-icon :icon="['fas', 'sliders']" /> Control
+            </button>
+        </div>
+
+        <!-- Control signals (P&H): generated in ID, drive the datapath -->
+        <div v-if="showControl && trace && controlSignals.length && act('ID')" class="dp-control">
+            <span class="dp-control-lbl">Control</span>
+            <span v-for="c in controlSignals" :key="c.name" class="dp-sig" :class="{ on: c.on }">
+                {{ c.name }}<b>{{ c.on ? 1 : 0 }}</b>
+            </span>
+            <span class="dp-control-hint">la Unidad de Control las genera en ID a partir del opcode/formato; gobiernan MUX, ALU y memorias</span>
         </div>
 
         <!-- Phase stepper: walk the current instruction's phases IF→ID→EX→MEM→WB -->
@@ -417,6 +439,23 @@ export default defineComponent({
 .dp-clive.active { background: rgba(var(--bs-primary-rgb), 0.85); color: #fff; border-color: transparent; }
 .dp-phase-now { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 64px; text-align: center; font-size: 0.78rem; }
 .dp-phase-hint { font-size: 0.7rem; color: rgba(var(--bs-body-color-rgb), 0.55); font-style: italic; }
+
+/* Control-signal strip */
+.dp-control { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dp-control-lbl { font-size: 0.72rem; font-weight: 700; color: rgba(var(--bs-body-color-rgb), 0.8); }
+.dp-sig {
+    font-size: 0.68rem; font-family: ui-monospace, monospace; font-weight: 600;
+    padding: 1px 6px; border-radius: 10px;
+    border: 1px solid rgba(var(--bs-secondary-rgb), 0.4);
+    background: rgba(var(--bs-secondary-rgb), 0.1);
+    color: rgba(var(--bs-body-color-rgb), 0.55);
+}
+.dp-sig b { margin-left: 4px; font-weight: 800; }
+.dp-sig.on {
+    color: #000; border-color: transparent;
+    background: var(--dp-active-color, #ffb300);
+}
+.dp-control-hint { font-size: 0.7rem; color: rgba(var(--bs-body-color-rgb), 0.55); font-style: italic; }
 
 /* Settings panel */
 .dp-settings {

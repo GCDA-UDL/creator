@@ -120,6 +120,44 @@ export function formatFromType(type: string): RvFormat {
     }
 }
 
+/** The canonical Patterson & Hennessy single-cycle control signals. */
+export interface ControlSignals {
+    RegWrite: 0 | 1;
+    ALUSrc: 0 | 1;
+    MemRead: 0 | 1;
+    MemWrite: 0 | 1;
+    MemToReg: 0 | 1;
+    Branch: 0 | 1;
+}
+
+const C_SYS = /^(ecall|ebreak|fence|csr|wfi|mret|sret|uret|nop)/;
+const C_LOAD = /^(l[bhwd]u?|lwu|ld|lr\.?|fl[wd])$/;
+const C_STORE = /^(s[bhwd]|sd|sc\.?|fs[wd])$/;
+const C_JUMP = /^(jal|jalr|j|jr|ret|call|tail)$/;
+const C_BRANCH = /^b(eq|ne|lt|ge|ltu|geu|eqz|nez|lez|gez|ltz|gtz|gt|le|gtu|leu)?$/;
+const C_UPPER = /^(lui|auipc)$/;
+const C_IIMM = /^(addi|addiw|andi|ori|xori|slti|sltiu|slli|srli|srai|slliw|srliw|sraiw|li|mv|not|seqz|snez|sltz|sgtz)$/;
+
+/**
+ * Derives the canonical P&H control signals for an instruction from its MNEMONIC,
+ * independent of CREATOR's (coarse) instruction-type categories — which classify e.g.
+ * `addi` as "Arithmetic integer" → R-format → ALUSrc=0, contradicting the textbook
+ * (addi is I-type, the immediate feeds the ALU → ALUSrc=1). This keeps the datapath
+ * faithful to Patterson & Hennessy COD ch.4.
+ */
+export function deriveControlSignals(asm: string): ControlSignals {
+    const m = (asm ?? "").trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+    const z: ControlSignals = { RegWrite: 0, ALUSrc: 0, MemRead: 0, MemWrite: 0, MemToReg: 0, Branch: 0 };
+    if (m === "" || C_SYS.test(m)) return z;
+    if (C_LOAD.test(m)) return { RegWrite: 1, ALUSrc: 1, MemRead: 1, MemWrite: 0, MemToReg: 1, Branch: 0 };
+    if (C_STORE.test(m)) return { RegWrite: 0, ALUSrc: 1, MemRead: 0, MemWrite: 1, MemToReg: 0, Branch: 0 };
+    if (C_JUMP.test(m)) return { RegWrite: 1, ALUSrc: 0, MemRead: 0, MemWrite: 0, MemToReg: 0, Branch: 1 };
+    if (C_BRANCH.test(m)) return { RegWrite: 0, ALUSrc: 0, MemRead: 0, MemWrite: 0, MemToReg: 0, Branch: 1 };
+    if (C_UPPER.test(m) || C_IIMM.test(m)) return { RegWrite: 1, ALUSrc: 1, MemRead: 0, MemWrite: 0, MemToReg: 0, Branch: 0 };
+    // default: R-type / FP arithmetic (operands are registers → ALUSrc=0)
+    return { RegWrite: 1, ALUSrc: 0, MemRead: 0, MemWrite: 0, MemToReg: 0, Branch: 0 };
+}
+
 /** Minimal data the engine passes in (all already available in executor.mjs). */
 export interface TraceInput {
     pc: bigint | string;

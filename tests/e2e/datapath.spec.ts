@@ -113,6 +113,29 @@ test.describe("Datapath view (per-architecture)", () => {
         await expect(now).toContainText("todas"); // single-cycle: all phases at once
     });
 
+    test("control signals appear in ID and reflect the instruction", async ({ page }) => {
+        await selectArchitecture(page, "RISC-V (RV32IMFD)");
+        // UdL datapath example: first instruction is `addi t0,x0,10` (I-type)
+        await page.locator('[title="Examples"]').click();
+        const modal = page.locator(".modal.show");
+        await modal.locator(".dropdown-toggle").click();
+        await page.locator(".dropdown-item", { hasText: "UdL · Test Datapath" }).click();
+        await modal.locator(".list-group-item").first().click();
+        await expect(modal).toBeHidden();
+        await page.waitForTimeout(400);
+        await openSchematic(page);
+
+        await page.getByRole("button", { name: "Step" }).click(); // execute addi; phase resets to IF
+        await page.waitForTimeout(150);
+        // at IF the control strip is hidden (control is generated in ID)
+        await expect(page.locator(".dp-control")).toHaveCount(0);
+        await page.getByRole("button", { name: "▶" }).click(); // advance to ID
+        await expect(page.locator(".dp-control")).toBeVisible();
+        await expect(page.locator(".dp-control")).toContainText("RegWrite");
+        // addi (I-type): RegWrite=1 and ALUSrc=1 are asserted
+        expect(await page.locator(".dp-sig.on").count()).toBeGreaterThanOrEqual(2);
+    });
+
     test("stepping a loaded example shows live operand values", async ({ page }) => {
         await selectArchitecture(page, "RISC-V (RV32IMFD)");
 
