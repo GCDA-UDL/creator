@@ -6,5 +6,10 @@
   { "name": "Lab 05 · Display 7-seg", "id": "lab05", "url": "examples/udl-tests/lab/lab_05_7seg.s", "description": "muestra un valor hex" },
   { "name": "Lab 06 · Pulsador (interrupcion/ISR)", "id": "lab06", "url": "examples/udl-tests/lab/lab_06_boton_isr.s", "description": "boton -> IRQ External -> ISR incrementa LEDs (handler Custom)" },
   { "name": "Lab 07 · Pulsador (sondeo/polling)", "id": "lab07", "url": "examples/udl-tests/lab/lab_07_boton_polling.s", "description": "lee el boton en bucle (contraste con la ISR)" },
+  { "name": "Lab 08 · LCD 16x2", "id": "lab08", "url": "examples/udl-tests/lab/lab_08_lcd.s", "description": "escribe 'HOLA UDL' con el protocolo de comando (CTRL/DATA)" },
+  { "name": "Lab 09 · Buzzer", "id": "lab09", "url": "examples/udl-tests/lab/lab_09_buzzer.s", "description": "enciende/apaga el zumbador (DATA bit0)" },
+  { "name": "Lab 10 · Potenciometro", "id": "lab10", "url": "examples/udl-tests/lab/lab_10_potenciometro.s", "description": "lee el potenciometro (0..1023) y lo refleja en los LEDs" },
+  { "name": "Lab 11 · LED RGB", "id": "lab11", "url": "examples/udl-tests/lab/lab_11_rgb.s", "description": "recorre colores en el LED RGB (0x00RRGGBB)" },
+  { "name": "Lab 12 · Timer (interrupcion/ISR)", "id": "lab12", "url": "examples/udl-tests/lab/lab_12_timer_isr.s", "description": "timer periodico -> IRQ External -> ISR cuenta en los LEDs (handler Custom)" },
   { "name": "Lab · completo (todos los perifericos)", "id": "laball", "url": "examples/udl-tests/lab/lab_completo.s", "description": "LEDs + 7-seg + matriz + switches" }
 ]
