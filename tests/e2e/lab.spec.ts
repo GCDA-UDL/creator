@@ -83,3 +83,81 @@ test("peripherals can be dragged around the canvas", async ({ page }) => {
     const after = await led.evaluate((el) => (el as HTMLElement).style.left);
     expect(after).not.toBe(before);
 });
+
+// ---- Lab phase-3 peripherals ----
+
+test("LCD shows the string written by the program", async ({ page }) => {
+    await bootRV32(page);
+    await loadLab(page, "Lab 08 · LCD 16x2");
+    await runAndOpenLab(page);
+    await expect(page.locator("wokwi-lcd1602")).toBeVisible();
+    await expect(page.locator(".lcd-mirror")).toContainText("HOLA UDL");
+});
+
+test("RGB LED reflects the last colour written (0x00RRGGBB)", async ({ page }) => {
+    await bootRV32(page);
+    await loadLab(page, "Lab 11 · LED RGB");
+    await runAndOpenLab(page);
+    await expect(page.locator("wokwi-neopixel")).toBeVisible();
+    // program ends on yellow 0xFFFF00
+    await expect(page.locator(".lab-view")).toContainText("0xFFFF00");
+    const r = await page.locator("wokwi-neopixel").evaluate((el: any) => el.r);
+    expect(r).toBe(255);
+});
+
+test("interval timer counts ticks while the program runs", async ({ page }) => {
+    await bootRV32(page);
+    await loadLab(page, "Lab 12 · Timer (interrupcion/ISR)");
+    await runAndOpenLab(page);
+    // the peripheral tick count is independent of ISR vectoring → visible even without Custom handler
+    const ticks = await page.locator(".timer-ticks").innerText();
+    expect(parseInt(ticks, 10)).toBeGreaterThan(0);
+});
+
+test("potentiometer input feeds the program (device-input)", async ({ page }) => {
+    await bootRV32(page);
+    await loadLab(page, "Lab 10 · Potenciometro");
+    await page.getByRole("button", { name: "Lab", exact: true }).click();
+    await expect(page.locator(".lab-view")).toBeVisible();
+    await page.locator("wokwi-potentiometer").evaluate((el) =>
+        el.dispatchEvent(new CustomEvent("input", { detail: 512 })),
+    );
+    await expect(page.locator(".lab-view")).toContainText("DATA = 512");
+});
+
+test("palette toggles a peripheral's visibility", async ({ page }) => {
+    await bootRV32(page);
+    await loadLab(page, "Lab 01 · Encender LEDs");
+    await page.getByRole("button", { name: "Lab", exact: true }).click();
+    await expect(page.locator(".leds")).toBeVisible();
+    const chip = page.locator(".chip", { hasText: "LEDs" });
+    await chip.click(); // hide
+    await expect(page.locator(".leds")).toBeHidden();
+    await chip.click(); // show again
+    await expect(page.locator(".leds")).toBeVisible();
+});
+
+test("board.json export downloads the layout", async ({ page }) => {
+    await bootRV32(page);
+    await loadLab(page, "Lab 01 · Encender LEDs");
+    await page.getByRole("button", { name: "Lab", exact: true }).click();
+    const [download] = await Promise.all([
+        page.waitForEvent("download"),
+        page.locator(".lab-btn", { hasText: "Guardar placa" }).click(),
+    ]);
+    expect(download.suggestedFilename()).toBe("creator-board.json");
+});
+
+test("board.json import applies visibility", async ({ page }) => {
+    await bootRV32(page);
+    await loadLab(page, "Lab 01 · Encender LEDs");
+    await page.getByRole("button", { name: "Lab", exact: true }).click();
+    await expect(page.locator(".leds")).toBeVisible();
+    const board = JSON.stringify({ version: 1, positions: {}, visible: { led: false } });
+    await page.locator("input.board-file").setInputFiles({
+        name: "creator-board.json",
+        mimeType: "application/json",
+        buffer: Buffer.from(board),
+    });
+    await expect(page.locator(".leds")).toBeHidden();
+});

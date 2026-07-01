@@ -75,9 +75,23 @@ flowchart LR
 | Display 7-seg | `0xF0001028` | `0xF0001020` (modo) | `0xF0001024` | valor; modo 2 = hex, 1 = dec |
 | Pulsador (IRQ) | `0xF0001038` | `0xF0001030` | `0xF0001034` | bit0 = pulsado; flanco de subida → interrupción **External** |
 | Matriz LED 8×8 | `0xF0001048` (ROW0, +4/fila) | `0xF0001040` | `0xF0001044` | bitmap por fila, **MSB = columna izquierda** |
+| LCD 16×2 | `0xF0001078` (char/pos) | `0xF0001070` | `0xF0001074` | CTRL: **1**=escribe DATA en el cursor, **2**=borra, **3**=cursor a DATA (protocolo de comando) |
+| Buzzer | `0xF0001088` | `0xF0001080` | `0xF0001084` | DATA **bit0** = sonido on/off |
+| Potenciómetro | `0xF0001098` (0..1023) | `0xF0001090` | `0xF0001094` | **entrada analógica**: la UI fija el valor, el programa lo lee con `lw` |
+| LED RGB | `0xF00010A8` (`0x00RRGGBB`) | `0xF00010A0` | `0xF00010A4` | 3 canales de 8 bits (rojo/verde/azul) |
+| Timer (IRQ) | `0xF00010B8` (periodo) | `0xF00010B0` (bit0=on) | `0xF00010B4` (bit0=pendiente) | temporizador de intervalo (PIT): cada *periodo* ciclos → interrupción **External** + flag sondeable |
 
-> **Lienzo arrastrable.** Los periféricos se pueden **arrastrar por su cabecera** (manija `⠿`) y la
-> disposición se guarda (localStorage); el botón **Reordenar** restaura la posición por defecto.
+> **Lienzo arrastrable + paleta + placa.** Los periféricos se **arrastran por su cabecera** (manija `⠿`)
+> y la disposición se guarda (localStorage). La **paleta** (chips arriba) muestra/oculta cada periférico.
+> **💾 Guardar placa** / **📂 Cargar placa** exportan/importan la disposición completa (posiciones +
+> visibles) como **`creator-board.json`**; **↺ Reordenar** restaura posiciones y muestra todos.
+
+> **Timer periférico vs timer de máquina (CSR).** El *Timer (IRQ)* de arriba es un **PIT periférico** que
+> levanta una interrupción **External** (igual que el pulsador; visualizable y sondeable). CREATOR además
+> tiene el **timer de máquina** por CSR — `mtime`/`mtimecmp` (`mie.MTIE` bit 7, causa **Timer**): cada
+> ciclo `mtime++`, y cuando `mtime == mtimecmp` levanta la interrupción **Timer**. Esa vía requiere
+> también el handler **Custom**, cargar la ISR con `mtvec` (el handler hace `>>2`, cargar la dirección
+> `<<2`) y, para periódico, reprogramar `mtimecmp` + limpiar `mip.MTIP` (`csrc mip,0x80`) en la ISR.
 
 > Está separada de la consola/SO (`0xF0000000`–`0xF000001F`), que CREATOR ya tenía.
 
@@ -93,6 +107,11 @@ flowchart LR
 | 6 | Cargar `Lab · completo`; **Run**; **Lab** | todos | LEDs `0xAA` + 7-seg `0042` + matriz flecha | Un solo programa controla los periféricos por MMIO. |
 | 7 | Cargar `Lab 07 · Pulsador (sondeo)`; **Lab**; **Step** y **mantén pulsado** el botón | Pulsador + LED 0 | el botón marca **PULSADO**; el LED 0 se enciende mientras lo mantienes | **Sondeo (polling)**: la CPU lee el registro del botón en bucle (`lw`) y refleja el bit. |
 | 8 | **Settings → Interrupt handler → Custom (architecture)**; cargar `Lab 06 · Pulsador (interrupción)`; **Step** por el bucle de espera y **pulsa** el botón | LEDs (contador) | al pulsar, la **ISR** (mtvec) salta e **incrementa** el contador de LEDs; vuelve con `mret` | **Interrupción External**: el flanco de subida marca `mip` (bit 11); con `mstatus.MIE` + `mie.MEIE` el núcleo vectoriza a la ISR. Contraste sondeo↔interrupción (tema clásico de AC). |
+| 9 | Cargar `Lab 08 · LCD 16x2`; **Run**; **Lab** | LCD 16×2 | muestra **`HOLA UDL`** | **Protocolo de comando**: se pone el carácter en DATA y se pulsa CTRL=1; el periférico lo consume y avanza el cursor (como un HD44780). |
+| 10 | Cargar `Lab 09 · Buzzer`; **Run**; **Lab** | Buzzer | pasa a **SONANDO** y luego a **silencio** | DATA bit0 activa/desactiva el zumbador (salida binaria). |
+| 11 | Cargar `Lab 10 · Potenciómetro`; **Lab**; **Run** y **girar** el potenciómetro | Potenciómetro → LEDs | los LEDs siguen la posición del mando | **Entrada analógica** por MMIO: la UI fija DATA (0..1023), el programa lo lee con `lw` (aquí escalado a un byte). |
+| 12 | Cargar `Lab 11 · LED RGB`; **Run**; **Lab** | LED RGB | recorre rojo→verde→azul→**amarillo** | DATA=`0x00RRGGBB`; el LED mezcla los 3 canales de 8 bits. |
+| 13 | (Opcional handler **Custom**) Cargar `Lab 12 · Timer (interrupción)`; **Run**; **Lab** | Timer + LEDs | el **contador de ticks** del timer avanza; con handler Custom, la **ISR** cuenta en los LEDs | **PIT periférico**: cada *periodo* ciclos levanta una interrupción **External** (y marca STATUS bit0, sondeable). El recuento visual es independiente del vectorizado de la ISR. |
 
 ## Variaciones
 
@@ -111,7 +130,13 @@ flowchart LR
 - [ ] Lab completo — los periféricos reflejan el programa a la vez. *(Sí/No)*
 - [ ] Lab 07 — mantener pulsado el botón enciende el LED 0 (sondeo). *(Sí/No)*
 - [ ] Lab 06 — con handler **Custom**, pulsar dispara la ISR y suma 1 a los LEDs (interrupción). *(Sí/No)*
+- [ ] Lab 08 — el LCD muestra `HOLA UDL` (protocolo de comando CTRL/DATA). *(Sí/No)*
+- [ ] Lab 09 — el buzzer pasa a SONANDO y luego a silencio (DATA bit0). *(Sí/No)*
+- [ ] Lab 10 — girar el potenciómetro mueve los LEDs (entrada analógica por MMIO). *(Sí/No)*
+- [ ] Lab 11 — el LED RGB recorre los colores y acaba en amarillo `0xFFFF00`. *(Sí/No)*
+- [ ] Lab 12 — el timer cuenta ticks; con handler **Custom**, la ISR cuenta en los LEDs. *(Sí/No)*
 - [ ] El lienzo permite **arrastrar** periféricos por la cabecera y **Reordenar** los recoloca. *(Sí/No)*
+- [ ] La **paleta** oculta/muestra periféricos y **Guardar/Cargar placa** (`creator-board.json`) preserva la disposición. *(Sí/No)*
 - [ ] Las direcciones MMIO de la tabla coinciden con las que muestra la vista. *(Sí/No)*
 
 ## Referencias
