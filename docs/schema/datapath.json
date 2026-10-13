@@ -42,7 +42,13 @@
                     "points": { "type": "string", "description": "SVG polyline points, e.g. \"58,210 78,210\"." },
                     "stage": { "$ref": "#/$defs/stage" },
                     "dashed": { "type": "boolean" },
-                    "selImm": { "type": "boolean", "description": "Highlight when the ALU takes the immediate (ALUSrc=1)." }
+                    "selImm": { "type": "boolean", "description": "Highlight when the ALU takes the immediate (ALUSrc=1)." },
+                    "fwd": {
+                        "type": "object",
+                        "description": "Forwarding (bypass) wire: lit when operand `role` is taken from that stage (MEM = EX/MEM result, WB = MEM/WB result) instead of the register file.",
+                        "properties": { "role": { "type": "string" }, "from": { "enum": ["MEM", "WB"] } },
+                        "required": ["role", "from"]
+                    }
                 },
                 "required": ["points"]
             }
@@ -72,7 +78,7 @@
             "items": {
                 "type": "object",
                 "properties": {
-                    "kind": { "enum": ["operand", "imm"] },
+                    "kind": { "enum": ["operand", "imm", "port", "fwd"], "description": "operand: \"role: reg = value\" · imm · port: bare value of pc | alu | wb (Ripes-style) · fwd: forwarding source chosen for rs1/rs2 (ID / MEM / WB)." },
                     "role": { "type": "string", "description": "Operand role name as decoded (rs1, rs2, rd, rs, rt, imm…)." },
                     "x": { "type": "number" },
                     "y": { "type": "number" }
@@ -90,7 +96,11 @@
             "properties": { "points": { "type": "string" }, "x": { "type": "number" }, "y": { "type": "number" } },
             "required": ["points", "x", "y"]
         },
-        "units": { "type": "array", "items": { "$ref": "#/$defs/unit" } }
+        "units": { "type": "array", "items": { "$ref": "#/$defs/unit" } },
+        "style": { "type": "string", "description": "Drawing style key (e.g. \"creator\", \"ripes\"); several built-in specs may serve one plugin." },
+        "styleLabel": { "type": "string", "description": "Human label of the style for the Schematic selector." },
+        "theme": { "enum": ["classic", "ripes"], "description": "Colour theme: classic (CREATOR) or ripes (dark grey, VSRTL look)." },
+        "branchStage": { "$ref": "#/$defs/stage", "description": "Stage in which THIS drawing resolves branches (badge; when the branch-taken path lights)." }
     },
     "$defs": {
         "stage": { "enum": ["IF", "ID", "EX", "MEM", "WB"] },
@@ -141,7 +151,8 @@
                 "color": { "$ref": "#/$defs/color" },
                 "dark": { "type": "boolean" },
                 "small": { "type": "boolean" },
-                "qmark": { "$ref": "#/$defs/point" }
+                "qmark": { "$ref": "#/$defs/point" },
+                "unitState": { "enum": ["hazard", "forwarding"], "description": "Pipeline-control unit drawn with live state: hazard lights when the instruction stalled, forwarding when an operand is bypassed." }
             },
             "required": ["id", "geom", "label", "labelPos"]
         },

@@ -62,6 +62,12 @@ export interface DpBlock {
     small?: boolean;
     /** Where to place the student-mode "?" badge (its help is looked up by `id`). */
     qmark?: DpPoint;
+    /**
+     * Pipeline-control unit drawn with live state (needs the pipeline model):
+     * "hazard" lights when the current instruction stalled (load-use / ecall drain),
+     * "forwarding" when one of its operands is bypassed.
+     */
+    unitState?: "hazard" | "forwarding";
 }
 
 /** A representative wire; highlights/flows when its stage is active. */
@@ -72,6 +78,12 @@ export interface DpWire {
     dashed?: boolean;
     /** Highlight this wire when the ALU takes the immediate (ALUSrc = 1). */
     selImm?: boolean;
+    /**
+     * Forwarding (bypass) wire: lit when the current instruction takes operand
+     * `role` (rs1/rs2…) from that pipeline stage instead of the register file
+     * ("MEM" = EX/MEM result, "WB" = MEM/WB result). Needs the pipeline model.
+     */
+    fwd?: { role: string; from: "MEM" | "WB" };
 }
 
 /** A static text note (e.g. "Next PC"). */
@@ -81,9 +93,16 @@ export interface DpNote {
     y: number;
 }
 
-/** An operand value anchor (renders "role: reg = value" or the immediate). */
+/**
+ * A value anchor:
+ *  - "operand": "role: reg = value" (rs1, rs2, rd, rs, rt…)
+ *  - "imm":     the immediate
+ *  - "port":    a bare hex/decimal value of a datapath port — `role` ∈ pc | alu | wb
+ *               (Ripes-style value labels on wires)
+ *  - "fwd":     the forwarding source chosen for operand `role` (ID / MEM / WB)
+ */
 export interface DpValue {
-    kind: "operand" | "imm";
+    kind: "operand" | "imm" | "port" | "fwd";
     role: string;
     x: number;
     y: number;
@@ -111,6 +130,22 @@ export interface DatapathSpec {
     id: string;
     /** Architecture `plugin` keys this built-in spec serves (e.g. ["riscv"]). */
     plugins: string[];
+    /**
+     * Drawing style key. Several built-in specs may serve the same plugin with a
+     * different style (RISC-V: "creator" = the P&H textbook schematic, "ripes" =
+     * the Ripes RV5S circuit). The Schematic view offers a selector when >1 exist.
+     */
+    style?: string;
+    /** Human label of the style for the selector (e.g. "Ripes (RV5S)"). */
+    styleLabel?: string;
+    /** Colour theme of the drawing: "classic" (CREATOR) or "ripes" (dark grey, VSRTL look). */
+    theme?: "classic" | "ripes";
+    /**
+     * Pipeline stage in which THIS DRAWING resolves conditional branches (where the
+     * comparator + next-PC MUX sit). Shown as a badge; the branch-taken path lights
+     * when that stage is reached. The Cycles view has its own (configurable) stage.
+     */
+    branchStage?: Stage;
     caption: string;
     viewBox: string;
     headers: { label: string; x: number }[];

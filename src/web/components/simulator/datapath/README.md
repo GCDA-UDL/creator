@@ -13,6 +13,36 @@ The drawing is **pure data** (a `DatapathSpec`). It is resolved in this order:
 So **standard ISAs need nothing** (RISC-V and MIPS draw automatically). Authoring
 a `datapath:` block lets a **custom architecture** ship its own drawing.
 
+## Drawing styles (RISC-V: CREATOR / Ripes)
+
+A plugin may ship **several built-in specs**, one per *style*; the Schematic view then
+shows an **Estilo** selector (persisted in `localStorage["creator-dp-style"]`):
+
+| style | spec | what it depicts |
+|---|---|---|
+| `creator` (default) | [`riscv.ts`](./riscv.ts) | the P&H COD textbook schematic (Zero in EX, taken decision + next-PC MUX in MEM — Fig. 4.51) |
+| `ripes` | [`ripes.ts`](./ripes.ts) | the circuit of Ripes' *5-Stage RISC-V Processor* (RV5S): two forwarding MUXes, branch comparator in EX, 3-way WB MUX, **Hazard** and **Forwarding** units with live state, dark VSRTL look |
+
+Each spec declares the stage in which **that drawing** resolves branches (`branchStage`);
+the view shows it as a badge and warns when the Cycles model is configured differently.
+The Ripes drawing offers a one-click **"Ripes (RV5S)" cycles preset** (branch in EX,
+single-cycle units, `ecallDrain`) — with it, CREATOR's cycle grid is cycle-exact
+against Ripes CLI (`RV32_5S`) on the comparison programs (see `tests/unit/ripesParity.spec.ts`).
+
+Fields that make a drawing *live* beyond stages/values (all optional):
+
+- `wires[].fwd: { role, from }` — a **bypass wire**, lit when operand `role` (rs1/rs2…)
+  is forwarded from `"MEM"` (EX/MEM result) or `"WB"` (MEM/WB result).
+- `blocks[].unitState: "hazard" | "forwarding"` — a control unit lit when the current
+  instruction **stalled** / has a **bypassed operand**; its state is printed under it.
+- `values[].kind: "port"` (`role` = `pc` | `alu` | `wb`: bare value labels, Ripes-style) and
+  `"fwd"` (`role` = rs1/rs2: the forwarding source chosen, `ID` / `MEM` / `WB`).
+- `theme: "ripes"` — dark canvas, grey components, light wires.
+
+They are computed from the same pure pipeline model as the Cycles view
+(`src/core/trace/pipelineModel.mts`) over the executed-instruction history, using the
+configuration shared through `pipelineConfigStore.mts` — no engine changes.
+
 ## Where it lives
 
 The renderer ([`DatapathSchematic.vue`](../DatapathSchematic.vue)) is generic and
@@ -33,6 +63,8 @@ Types: [`spec.ts`](./spec.ts). JSON schema for editors/validation:
 - **`srcRegRole`**: the second ALU source register role for the MUX label (`rs2`/`rt`).
 - **`units`**: optional `M` (multiplier) / `FP` (FPU) blocks, drawn only when the
   loaded ISA exposes that extension and lit when the instruction uses it.
+- **`branchStage`**: stage where the drawing resolves branches (`ID`/`EX`/`MEM`); drives
+  the badge and when the branch-taken path lights.
 - **Coordinates**: SVG user units inside `viewBox` (built-ins use `0 0 940 430`).
 - **Colors**: tokens `green greenlt red blue cyan yellow gray white` (theme-aware).
 

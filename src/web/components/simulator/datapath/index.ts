@@ -11,14 +11,29 @@
 import type { DatapathSpec } from "./spec";
 import { riscvSpec } from "./riscv";
 import { mipsSpec } from "./mips";
+import { ripesSpec } from "./ripes";
 
-const BUILTIN: DatapathSpec[] = [riscvSpec, mipsSpec];
+/** Built-in specs; the first one matching a plugin is that plugin's default style. */
+const BUILTIN: DatapathSpec[] = [riscvSpec, ripesSpec, mipsSpec];
 
-/** Built-in spec for a given architecture `plugin` (e.g. "riscv", "mips"). */
-export function builtinSpecForPlugin(plugin?: string | null): DatapathSpec | null {
-    if (!plugin) return null;
+export const DEFAULT_STYLE = "creator";
+
+/** All built-in specs (drawing styles) available for an architecture `plugin`. */
+export function builtinSpecsForPlugin(plugin?: string | null): DatapathSpec[] {
+    if (!plugin) return [];
     const p = String(plugin).toLowerCase();
-    return BUILTIN.find(s => s.plugins.includes(p)) ?? null;
+    return BUILTIN.filter(s => s.plugins.includes(p));
+}
+
+/** Built-in spec for a plugin, optionally by style key; falls back to the plugin's default. */
+export function builtinSpecForPlugin(plugin?: string | null, style?: string | null): DatapathSpec | null {
+    const all = builtinSpecsForPlugin(plugin);
+    if (all.length === 0) return null;
+    if (style) {
+        const byStyle = all.find(s => (s.style ?? DEFAULT_STYLE) === style);
+        if (byStyle) return byStyle;
+    }
+    return all[0] ?? null;
 }
 
 /**
@@ -47,6 +62,10 @@ export function normalizeSpec(s: Partial<DatapathSpec>): DatapathSpec {
         muxSrc: s.muxSrc,
         branchPath: s.branchPath,
         units: s.units,
+        style: s.style,
+        styleLabel: s.styleLabel,
+        theme: s.theme,
+        branchStage: s.branchStage,
     };
 }
 
@@ -59,13 +78,14 @@ export function normalizeSpec(s: Partial<DatapathSpec>): DatapathSpec {
 export function resolveDatapathSpec(
     plugin?: string | null,
     custom?: Partial<DatapathSpec> | null,
+    style?: string | null,
 ): DatapathSpec | null {
     if (custom && Array.isArray(custom.blocks) && custom.blocks.length > 0) {
         const base = builtinSpecForPlugin(plugin);
         return normalizeSpec(base ? { ...base, ...custom } : custom);
     }
-    return builtinSpecForPlugin(plugin);
+    return builtinSpecForPlugin(plugin, style);
 }
 
 export type { DatapathSpec } from "./spec";
-export { riscvSpec, mipsSpec };
+export { riscvSpec, mipsSpec, ripesSpec };

@@ -9,8 +9,18 @@ optional M/FPU units. Appearance is customisable via a gear panel (localStorage)
 <script lang="ts">
 import { defineComponent, type PropType } from "vue";
 import { deriveControlSignals, type DatapathTrace } from "@/core/trace/datapathTrace.mts";
-import { resolveDatapathSpec } from "./datapath/index";
-import type { DatapathSpec } from "./datapath/spec";
+import { resolveDatapathSpec, builtinSpecsForPlugin, DEFAULT_STYLE } from "./datapath/index";
+import type { DatapathSpec, DpBlock } from "./datapath/spec";
+import { coreEvents } from "@/core/events.mts";
+import { getExecutionHistory } from "@/core/trace/executionHistory.mts";
+import {
+    schedulePipeline,
+    buildPipeInstr,
+    DEFAULT_PIPELINE_CONFIG,
+    RIPES_PIPELINE_CONFIG,
+    type PipelineConfig,
+} from "@/core/trace/pipelineModel.mts";
+import { CYCLES_CONFIG_EVENT, loadCyclesConfig, saveCyclesConfig } from "./pipelineConfigStore.mts";
 
 interface DpSettings {
     labelSize: number;
@@ -38,6 +48,16 @@ const DEFAULTS: DpSettings = {
     showWires: true,
 };
 const LS_KEY = "creator-dp-schematic-settings";
+const STYLE_KEY = "creator-dp-style";
+
+/** Live pipeline state of the current instruction (for Ripes-style drawings). */
+interface PipeInfo {
+    /** Forwarding source per operand role: "MEM" (EX/MEM result) or "WB" (MEM/WB result). */
+    fwdSrc: Record<string, "MEM" | "WB">;
+    /** Stall of the current instruction, if any (load-use / ecall drain …). */
+    stalled: { kind: string; waitFor: string; cycles: number } | null;
+}
+const NO_PIPE: PipeInfo = { fwdSrc: {}, stalled: null };
 
 /** Generic, university-neutral appearance presets. */
 const PRESETS: Record<string, Partial<DpSettings>> = {
@@ -67,15 +87,28 @@ export default defineComponent({
             phaseCursor: 1,
             allPhases: false,
             showControl: true, // show the control-signal strip (RegWrite, ALUSrc, …)
+            // Drawing style (when the plugin ships several, e.g. RISC-V: CREATOR / Ripes).
+            style: DEFAULT_STYLE as string,
+            // Pipeline configuration shared with the Cycles view (branch stage, forwarding…).
+            cyclesCfg: loadCyclesConfig() as Partial<PipelineConfig>,
+            histVersion: 0, // bumped on each executed instruction / reset
         };
     },
     mounted() {
         try {
             const raw = localStorage.getItem(LS_KEY);
             if (raw) this.settings = { ...DEFAULTS, ...JSON.parse(raw) };
+            const st = localStorage.getItem(STYLE_KEY);
+            if (st) this.style = st;
         } catch {
             /* ignore corrupt settings */
         }
+        window.addEventListener(CYCLES_CONFIG_EVENT, this.onCyclesConfig);
+        (coreEvents as any).on("registers-reset", this.onReset);
+    },
+    beforeUnmount() {
+        window.removeEventListener(CYCLES_CONFIG_EVENT, this.onCyclesConfig);
+        (coreEvents as any).off("registers-reset", this.onReset);
     },
     watch: {
         settings: {
@@ -92,11 +125,74 @@ export default defineComponent({
         // (unless the user chose the all-phases / single-cycle view).
         trace() {
             if (!this.allPhases) this.phaseCursor = 1;
+            this.histVersion++;
+        },
+        style(v: string) {
+            try {
+                localStorage.setItem(STYLE_KEY, v);
+            } catch {
+                /* ignore */
+            }
         },
     },
     computed: {
         spec(): DatapathSpec | null {
-            return resolveDatapathSpec(this.plugin, this.customSpec);
+            return resolveDatapathSpec(this.plugin, this.customSpec, this.style);
+        },
+        /** Drawing styles available for this architecture (none when a custom YAML drawing is used). */
+        styles(): { id: string; label: string }[] {
+            const custom = this.customSpec;
+            if (custom && Array.isArray(custom.blocks) && custom.blocks.length > 0) return [];
+            return builtinSpecsForPlugin(this.plugin).map(s => ({
+                id: s.style ?? DEFAULT_STYLE,
+                label: s.styleLabel ?? s.id,
+            }));
+        },
+        /** Stage in which the DRAWING resolves branches (badge + branch-path timing). */
+        branchStageDrawn(): string {
+            return this.spec?.branchStage ?? "EX";
+        },
+        /** Stage the Cycles model resolves branches in (its configuration). */
+        cyclesBranchStage(): string {
+            return this.cyclesCfg.branchStage ?? DEFAULT_PIPELINE_CONFIG.branchStage ?? "ID";
+        },
+        branchMismatch(): boolean {
+            return this.branchStageDrawn !== this.cyclesBranchStage;
+        },
+        /** Does the drawing show pipeline state (forwarding wires, hazard/forwarding units)? */
+        needsPipeline(): boolean {
+            const s = this.spec;
+            if (!s) return false;
+            return s.wires.some(w => w.fwd !== undefined) || s.blocks.some(b => b.unitState !== undefined) || s.values.some(v => v.kind === "fwd");
+        },
+        /** Forwarding sources + stall of the current instruction, from the pipeline model. */
+        pipeInfo(): PipeInfo {
+            // histVersion is a dependency on purpose: the history is read outside Vue's reactivity
+            if (this.histVersion < 0 || !this.needsPipeline || !this.trace) return NO_PIPE;
+            const hist = getExecutionHistory();
+            const idx = hist.length - 1;
+            if (idx < 0) return NO_PIPE;
+            const cfg: PipelineConfig = { ...DEFAULT_PIPELINE_CONFIG, ...this.cyclesCfg };
+            const sched = schedulePipeline(hist.map((t, i) => buildPipeInstr(t, i)), cfg);
+            const fwdSrc: Record<string, "MEM" | "WB"> = {};
+            for (const f of sched.forwards) {
+                if (f.toIndex !== idx) continue;
+                // producer one stage ahead (in MEM) → EX/MEM result; otherwise it is in WB
+                const src: "MEM" | "WB" = !f.loadUse && f.toCycle - f.fromCycle === 1 ? "MEM" : "WB";
+                for (const role of Object.keys(this.op)) {
+                    if (this.op[role] === f.reg && /^(rs1|rs2|rs|rt|rs3)$/.test(role)) fwdSrc[role] = src;
+                }
+            }
+            const row = sched.rows[idx];
+            const stalls = row ? row.cells.filter(c => c.stalled) : [];
+            const first = stalls[0];
+            const stalled = first
+                ? { kind: first.stallKind ?? "RAW", waitFor: first.waitFor ?? "", cycles: stalls.length }
+                : null;
+            return { fwdSrc, stalled };
+        },
+        fwdCount(): number {
+            return Object.keys(this.pipeInfo.fwdSrc).length;
         },
         stages(): Set<string> {
             const t = this.trace;
@@ -190,6 +286,51 @@ export default defineComponent({
         act(stage: string): boolean {
             return this.activeStages.has(stage);
         },
+        onCyclesConfig() {
+            this.cyclesCfg = loadCyclesConfig();
+        },
+        onReset() {
+            this.histVersion++;
+        },
+        /** Puts the Cycles view in the Ripes RV5S configuration (branch in EX, 1-cycle units, ecall drain). */
+        applyRipesPreset() {
+            saveCyclesConfig({ ...RIPES_PIPELINE_CONFIG });
+            this.cyclesCfg = loadCyclesConfig();
+        },
+        /** Is a pipeline-control unit block lit (hazard → stalled; forwarding → bypass active)? */
+        unitOn(b: DpBlock): boolean {
+            if (b.unitState === "hazard") return this.pipeInfo.stalled !== null;
+            if (b.unitState === "forwarding") return this.fwdCount > 0;
+            return false;
+        },
+        unitStateText(b: DpBlock): string {
+            const p = this.pipeInfo;
+            if (b.unitState === "hazard") {
+                return p.stalled ? `stall ×${p.stalled.cycles}${p.stalled.waitFor ? " (" + p.stalled.waitFor + ")" : ""}` : "—";
+            }
+            if (b.unitState === "forwarding") {
+                const e = Object.entries(p.fwdSrc);
+                return e.length ? e.map(([r, src]) => `${r} ← ${src}`).join("  ") : "—";
+            }
+            return "";
+        },
+        /** Position of a unit's state text: just under the block. */
+        unitStateY(b: DpBlock): number {
+            return b.geom.kind === "rect" ? b.geom.y + b.geom.h + 12 : b.labelPos.y + 20;
+        },
+        /** Bare value of a datapath port ("pc", "alu", "wb") for Ripes-style value labels. */
+        portLabel(role: string): string {
+            if (role === "pc") return "pc = " + (this.trace?.pc ?? "");
+            const v = this.val[this.destRole];
+            if (role === "alu") return this.unit === "alu" && v !== undefined ? "= " + v : "";
+            if (role === "wb") return v !== undefined ? "wb = " + v : "";
+            return "";
+        },
+        /** Forwarding source chosen for an operand role (ID = register file). */
+        fwdLabel(role: string): string {
+            if (!this.op[role]) return "";
+            return role + " ← " + (this.pipeInfo.fwdSrc[role] ?? "ID");
+        },
         stepPhase(delta: number) {
             this.allPhases = false;
             this.phaseCursor = Math.min(Math.max(this.phaseCursor + delta, 1), Math.max(1, this.phaseCount));
@@ -241,6 +382,12 @@ export default defineComponent({
             <button class="dp-gear" :class="{ active: studentMode }" title="Student mode: click the ? marks to learn each part" @click="studentMode = !studentMode; explain = null">
                 <font-awesome-icon :icon="['fas', 'graduation-cap']" /> Student
             </button>
+            <label v-if="styles.length > 1" class="dp-style" title="Estilo del dibujo: esquema del libro (P&H) o circuito de Ripes (RV5S)">
+                Estilo
+                <select v-model="style">
+                    <option v-for="st in styles" :key="st.id" :value="st.id">{{ st.label }}</option>
+                </select>
+            </label>
             <button class="dp-gear" :class="{ active: showControl }" title="Mostrar las señales de control (RegWrite, ALUSrc, …) que genera la unidad de control" @click="showControl = !showControl">
                 <font-awesome-icon :icon="['fas', 'sliders']" /> Control
             </button>
@@ -253,6 +400,19 @@ export default defineComponent({
                 {{ c.name }}<b>{{ c.on ? 1 : 0 }}</b>
             </span>
             <span class="dp-control-hint">la Unidad de Control las genera en ID a partir del opcode/formato; gobiernan MUX, ALU y memorias</span>
+        </div>
+
+        <!-- Where this drawing resolves branches vs. the Cycles model (they are independent knobs) -->
+        <div v-if="spec && spec.branchStage" class="dp-branchinfo">
+            <span class="dp-bi-lbl">Salto resuelto en</span>
+            <b class="dp-bi-stage">{{ spec.branchStage }}</b>
+            <span class="dp-bi-hint">en este esquema</span>
+            <span v-if="branchMismatch" class="dp-bi-mismatch" title="El modelo de ciclos (vista Cycles) resuelve el salto en otra etapa: cambia su preset o el estilo del dibujo para que coincidan">
+                · el modelo de ciclos usa <b>{{ cyclesBranchStage }}</b>
+            </span>
+            <button v-if="spec.style === 'ripes'" class="dp-pbtn dp-ripes-preset" title="Configura la vista Cycles como el procesador RV5S de Ripes: salto en EX, unidades de 1 ciclo, ecall drena el pipeline" @click="applyRipesPreset">
+                Aplicar preset de ciclos "Ripes (RV5S)"
+            </button>
         </div>
 
         <!-- Phase stepper: walk the current instruction's phases IF→ID→EX→MEM→WB -->
@@ -326,7 +486,7 @@ export default defineComponent({
             :viewBox="spec.viewBox"
             preserveAspectRatio="xMidYMid meet"
             class="dp-svg"
-            :class="'scheme-' + settings.scheme"
+            :class="['scheme-' + settings.scheme, 'theme-' + (spec.theme ?? 'classic')]"
             :style="rootStyle"
         >
             <!-- Stage headers -->
@@ -356,21 +516,22 @@ export default defineComponent({
                     v-for="(w, i) in spec.wires"
                     :key="'w' + i"
                     :points="w.points"
-                    :class="{ won: w.stage && act(w.stage), wsel: w.selImm && aluSrc, wb: w.dashed }"
+                    :class="{ won: w.stage && act(w.stage), wsel: w.selImm && aluSrc, wb: w.dashed, wfwd: w.fwd && pipeInfo.fwdSrc[w.fwd.role] === w.fwd.from }"
                 />
             </g>
 
             <!-- Functional blocks -->
-            <g v-for="b in spec.blocks" :key="b.id" class="stage" :class="{ active: b.stage && act(b.stage) }">
+            <g v-for="b in spec.blocks" :key="b.id" class="stage" :class="{ active: (b.stage && act(b.stage)) || unitOn(b), 'unit-state': !!b.unitState, 'unit-on': unitOn(b) }">
                 <rect v-if="b.geom.kind === 'rect'" class="blk" :class="b.color" :x="b.geom.x" :y="b.geom.y" :width="b.geom.w" :height="b.geom.h" :rx="b.geom.rx" />
                 <ellipse v-else-if="b.geom.kind === 'ellipse'" class="blk" :class="b.color" :cx="b.geom.cx" :cy="b.geom.cy" :rx="b.geom.rx" :ry="b.geom.ry" />
                 <polygon v-else-if="b.geom.kind === 'polygon'" class="blk" :class="b.color" :points="b.geom.points" />
                 <text :x="b.labelPos.x" :y="b.labelPos.y" class="bt" :class="{ sm: b.small, dark: b.dark }">{{ b.label }}</text>
+                <text v-if="b.unitState && settings.showValues" :x="b.labelPos.x" :y="unitStateY(b)" class="note val ustate">{{ unitStateText(b) }}</text>
             </g>
 
             <!-- Operand values -->
             <template v-if="settings.showValues">
-                <text v-for="(v, i) in spec.values" :key="'val' + i" :x="v.x" :y="v.y" class="note val">{{ v.kind === 'imm' ? immLabel(v.role) : valLabel(v.role) }}</text>
+                <text v-for="(v, i) in spec.values" :key="'val' + i" :x="v.x" :y="v.y" class="note val">{{ v.kind === 'imm' ? immLabel(v.role) : v.kind === 'port' ? portLabel(v.role) : v.kind === 'fwd' ? fwdLabel(v.role) : valLabel(v.role) }}</text>
                 <text :x="spec.wb.x" :y="spec.wb.y" class="note val">{{ op[destRole] ? valLabel(destRole) : 'WB Data' }}</text>
                 <text v-if="spec.aluResult && unit === 'alu' && val[destRole] !== undefined" :x="spec.aluResult.x" :y="spec.aluResult.y" class="note val">= {{ val[destRole] }}</text>
                 <text v-if="spec.muxSrc && trace" :x="spec.muxSrc.x" :y="spec.muxSrc.y" class="note val">{{ aluSrc ? 'imm' : spec.srcRegRole }}</text>
@@ -386,7 +547,7 @@ export default defineComponent({
             </g>
 
             <!-- Branch-taken path -->
-            <g v-if="branched && exReached && spec.branchPath" class="dp-branch">
+            <g v-if="branched && act(branchStageDrawn) && spec.branchPath" class="dp-branch">
                 <polyline :points="spec.branchPath.points" />
                 <text :x="spec.branchPath.x" :y="spec.branchPath.y" class="note val">branch taken</text>
             </g>
@@ -401,7 +562,7 @@ export default defineComponent({
         </svg>
 
         <p v-if="spec" class="dp-note-cap">
-            {{ spec.caption }}
+            <span v-if="spec.styleLabel && styles.length > 1" class="dp-cap-style">{{ spec.styleLabel }} · </span>{{ spec.caption }}
             <span v-if="trace">({{ trace.asm }})</span>
         </p>
     </div>
@@ -424,6 +585,16 @@ export default defineComponent({
     background: rgba(var(--bs-primary-rgb), 0.15);
     color: rgba(var(--bs-primary-rgb), 1);
 }
+
+/* Style selector + branch-stage badge */
+.dp-style { display: inline-flex; align-items: center; gap: 5px; font-size: 0.75rem; font-weight: 600; color: rgba(var(--bs-body-color-rgb), 0.85); }
+.dp-style select { font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; }
+.dp-branchinfo { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 0.72rem; color: rgba(var(--bs-body-color-rgb), 0.75); }
+.dp-bi-lbl { font-weight: 700; color: rgba(var(--bs-body-color-rgb), 0.8); }
+.dp-bi-stage { padding: 0 7px; border-radius: 10px; background: var(--dp-active-color, #ffb300); color: #000; }
+.dp-bi-hint, .dp-bi-mismatch { font-style: italic; }
+.dp-bi-mismatch { color: rgba(var(--bs-warning-rgb), 1); }
+.dp-ripes-preset { font-size: 0.7rem; }
 
 /* Phase stepper */
 .dp-phase { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -523,6 +694,11 @@ export default defineComponent({
 .dp-wires polyline { fill: none; stroke: rgba(var(--bs-body-color-rgb), 0.45); stroke-width: 1.6; }
 .dp-wires .wb { stroke-dasharray: 5 3; }
 .dp-wires .wsel { stroke: var(--dp-active-color, #ffb300); stroke-width: 2.6; }
+/* active forwarding (bypass) wire */
+.dp-wires .wfwd {
+    stroke: #43a047; stroke-width: 2.8; stroke-dasharray: 6 4;
+    animation: dpflow 0.7s linear infinite;
+}
 .dp-wires .won {
     stroke: var(--dp-active-color, #ffb300);
     stroke-width: 2.6;
@@ -572,6 +748,25 @@ export default defineComponent({
 .dp-units .unit-on rect { stroke: var(--dp-active-color, #ffb300); stroke-width: var(--dp-active-stroke, 1px); }
 .dp-units text { font-size: 10px; font-weight: 700; text-anchor: middle; fill: #fff; }
 .dp-units .ulbl { font-size: 8px; font-weight: 600; fill: rgba(var(--bs-body-color-rgb), 0.6); }
+/* Pipeline-control units with live state (hazard / forwarding) */
+.unit-state .ustate { font-size: 10px; text-anchor: middle; }
+.unit-state.unit-on .blk { stroke: #43a047; }
+.unit-state.unit-on { filter: drop-shadow(0 0 var(--dp-glow, 2.5px) #43a047); }
+/* Ripes / VSRTL look: dark canvas, grey components, light wires */
+.theme-ripes { background: #2b2b2b; border-color: #3c3c3c; }
+.theme-ripes .hd { fill: #e6e6e6; }
+.theme-ripes .lbl { fill: #bdbdbd; }
+.theme-ripes .note { fill: #9e9e9e; }
+.theme-ripes .dp-sep line { stroke: rgba(255, 255, 255, 0.22); }
+.theme-ripes .dp-pipereg rect { fill: #6f6f6f; opacity: 0.95; }
+.theme-ripes .blk { fill: #8e8e8e; stroke: #d6d6d6; }
+.theme-ripes .bt { fill: #0e0e0e; }
+.theme-ripes .dp-wires polyline { stroke: #cfcfcf; stroke-width: 1.4; }
+.theme-ripes .dp-wires .wb { stroke: #a8a8a8; }
+.theme-ripes .dp-wires .won { stroke: var(--dp-active-color, #ffb300); }
+.theme-ripes .dp-wires .wfwd { stroke: #66bb6a; }
+.theme-ripes .stage { opacity: 0.55; }
+.theme-ripes .dp-qmarks circle { stroke: #fff; }
 
 .dp-note-cap { font-size: 0.72rem; color: rgba(var(--bs-body-color-rgb), 0.6); margin: 0; }
 
