@@ -16,9 +16,11 @@ import {
     schedulePipeline,
     buildPipeInstr,
     DEFAULT_PIPELINE_CONFIG,
+    RIPES_PIPELINE_CONFIG,
     type PipelineConfig,
     type PipelineSchedule,
 } from "@/core/trace/pipelineModel.mts";
+import { CYCLES_CONFIG_EVENT, loadCyclesConfig, saveCyclesConfig } from "./pipelineConfigStore.mts";
 
 type BranchStage = "ID" | "EX" | "MEM";
 interface CyclesConfig {
@@ -29,6 +31,8 @@ interface CyclesConfig {
     fpAddLatency: number;
     mulLatency: number;
     divLatency: number;
+    /** Ripes-style: an ecall waits in EX until older register writes retire. */
+    ecallDrain: boolean;
 }
 const DEFAULTS: CyclesConfig = {
     forwarding: DEFAULT_PIPELINE_CONFIG.forwarding,
@@ -38,15 +42,26 @@ const DEFAULTS: CyclesConfig = {
     fpAddLatency: DEFAULT_PIPELINE_CONFIG.fpAddLatency,
     mulLatency: DEFAULT_PIPELINE_CONFIG.mulLatency,
     divLatency: DEFAULT_PIPELINE_CONFIG.divLatency,
+    ecallDrain: false,
 };
-const LS_KEY = "creator-cycles-config";
 const MAX_ROWS = 250;
 
 const PRESETS: Record<string, CyclesConfig> = {
-    "P&H textbook": { forwarding: true, btb: false, delaySlot: false, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
-    "MIPS classic": { forwarding: true, btb: false, delaySlot: true, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
-    "No forwarding": { forwarding: false, btb: false, delaySlot: false, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
-    "Predicted (BTB)": { forwarding: true, btb: true, delaySlot: false, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
+    "P&H textbook": { forwarding: true, btb: false, delaySlot: false, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24, ecallDrain: false },
+    "MIPS classic": { forwarding: true, btb: false, delaySlot: true, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24, ecallDrain: false },
+    "No forwarding": { forwarding: false, btb: false, delaySlot: false, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24, ecallDrain: false },
+    "Predicted (BTB)": { forwarding: true, btb: true, delaySlot: false, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24, ecallDrain: false },
+    // Ripes "5-Stage RISC-V Processor" (RV32_5S): verified cycle-exact against Ripes CLI (see tests)
+    "Ripes (RV5S)": {
+        forwarding: true,
+        btb: false,
+        delaySlot: false,
+        branchStage: "EX",
+        fpAddLatency: RIPES_PIPELINE_CONFIG.fpAddLatency,
+        mulLatency: RIPES_PIPELINE_CONFIG.mulLatency,
+        divLatency: RIPES_PIPELINE_CONFIG.divLatency,
+        ecallDrain: true,
+    },
 };
 
 export default defineComponent({
@@ -66,29 +81,22 @@ export default defineComponent({
         };
     },
     mounted() {
-        try {
-            const raw = localStorage.getItem(LS_KEY);
-            if (raw) this.config = { ...DEFAULTS, ...JSON.parse(raw) };
-        } catch {
-            /* ignore */
-        }
+        this.config = { ...DEFAULTS, ...loadCyclesConfig() } as CyclesConfig;
         (coreEvents as any).on(DATAPATH_TRACE_EVENT, this.onChange);
         (coreEvents as any).on("registers-reset", this.onReset);
+        window.addEventListener(CYCLES_CONFIG_EVENT, this.onExternalConfig);
         this.$nextTick(() => this.scrollToCursor());
     },
     beforeUnmount() {
         (coreEvents as any).off(DATAPATH_TRACE_EVENT, this.onChange);
         (coreEvents as any).off("registers-reset", this.onReset);
+        window.removeEventListener(CYCLES_CONFIG_EVENT, this.onExternalConfig);
     },
     watch: {
         config: {
             deep: true,
             handler(v: CyclesConfig) {
-                try {
-                    localStorage.setItem(LS_KEY, JSON.stringify(v));
-                } catch {
-                    /* ignore */
-                }
+                saveCyclesConfig(v);
             },
         },
         displayMaxCycle() {
@@ -123,6 +131,7 @@ export default defineComponent({
                 fpAddLatency: this.config.fpAddLatency,
                 mulLatency: this.config.mulLatency,
                 divLatency: this.config.divLatency,
+                ecallDrain: this.config.ecallDrain,
             };
             const instrs = getExecutionHistory().map((t, i) => buildPipeInstr(t, i));
             return schedulePipeline(instrs, cfg);
@@ -166,7 +175,7 @@ export default defineComponent({
                 let g = cell.stage as string;
                 let unit = "";
                 if (cell.stalled) {
-                    g = "ID";
+                    g = cell.holdStage ?? "ID";
                 } else if (g === "EX" || g === "DIV" || g[0] === "M" || g[0] === "A") {
                     unit = g === "EX" ? "" : g;
                     g = "EX";
@@ -267,6 +276,12 @@ export default defineComponent({
             this.$nextTick(() => this.scrollRight());
         },
         stallTitle(cell: { stallKind?: string; waitFor?: string; readyCycle?: number }): string {
+            if (cell.stallKind === "Sys") {
+                return cell.waitFor === "ecall"
+                    ? `Syscall stall — EX is held by the ecall draining the pipeline (free in cycle ${cell.readyCycle ?? "?"})`
+                    : `Syscall stall — the ecall waits until ${cell.waitFor ?? "the older writes"} is written back` +
+                          (cell.readyCycle !== undefined ? ` (cycle ${cell.readyCycle})` : "");
+            }
             if (cell.stallKind === "Str") {
                 return cell.readyCycle != null
                     ? `Structural stall — divider busy, free in cycle ${cell.readyCycle}`
@@ -292,6 +307,11 @@ export default defineComponent({
         applyPreset(name: string) {
             const p = PRESETS[name];
             if (p) this.config = { ...p };
+        },
+        /** Another view (e.g. the Schematic's "Ripes" button) saved a configuration. */
+        onExternalConfig() {
+            const next = { ...DEFAULTS, ...loadCyclesConfig() } as CyclesConfig;
+            if (JSON.stringify(next) !== JSON.stringify(this.config)) this.config = next;
         },
         resetConfig() {
             this.config = { ...DEFAULTS };
@@ -361,11 +381,14 @@ export default defineComponent({
                            @change="config.delaySlot = ($event.target as HTMLInputElement).checked" />
                     Delay slot <span v-if="!isMips" class="cyc-muted">(solo MIPS)</span>
                 </label>
+                <label class="cyc-chk" title="Estilo Ripes: el ecall espera en EX a que las instrucciones anteriores escriban sus registros (su gestor de syscalls lee el banco). Desactivado = modelo del libro (ecall = instrucción normal)">
+                    <input type="checkbox" v-model="config.ecallDrain" /> ecall drena el pipeline <span class="cyc-muted">(Ripes)</span>
+                </label>
                 <label class="cyc-sel" title="Etapa donde se resuelve el salto (predict-not-taken), según P&H COD: ID=1, EX=2, MEM=3 burbujas">
                     Branch resuelto en
                     <select v-model="config.branchStage">
                         <option value="ID">ID (1 ciclo · P&H)</option>
-                        <option value="EX">EX (2 ciclos · WinMIPS64)</option>
+                        <option value="EX">EX (2 ciclos · WinMIPS64 / Ripes)</option>
                         <option value="MEM">MEM (3 ciclos · base)</option>
                     </select>
                 </label>
@@ -390,6 +413,7 @@ export default defineComponent({
                 <div class="stat"><div class="n">{{ stats.warStalls }}</div><div class="l">WAR stalls</div></div>
                 <div class="stat"><div class="n">{{ stats.branchTakenStalls }}</div><div class="l">Branch-taken stalls</div></div>
                 <div class="stat"><div class="n">{{ stats.branchMispredStalls }}</div><div class="l">Branch-mispred stalls</div></div>
+                <div v-if="config.ecallDrain || stats.syscallStalls" class="stat"><div class="n">{{ stats.syscallStalls }}</div><div class="l">Syscall stalls</div></div>
             </div>
 
             <!-- Legend -->

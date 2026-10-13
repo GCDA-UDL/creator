@@ -24,7 +24,7 @@ import type { DatapathTrace } from "./datapathTrace.mts";
 export type PipeUnit = "alu" | "mul" | "fpu" | "div";
 
 /** Stall categories drawn on the grid (núcleo). */
-export type StallKind = "RAW" | "WAW" | "WAR" | "Str";
+export type StallKind = "RAW" | "WAW" | "WAR" | "Str" | "Sys";
 
 /** One executed instruction, normalised for scheduling (ISA-agnostic). */
 export interface PipeInstr {
@@ -62,6 +62,13 @@ export interface PipelineConfig {
      *   - "MEM" → 3 bubbles (the un-optimized base pipeline).
      */
     branchStage?: "ID" | "EX" | "MEM";
+    /**
+     * Ripes-style system calls: an `ecall` is held in EX until every older
+     * instruction still in flight has written its register (Ripes RV5S hazard unit:
+     * the syscall handler reads the register file, so outstanding MEM/WB writes
+     * must retire first). Off = the textbook model (the ecall is a plain instruction).
+     */
+    ecallDrain?: boolean;
 }
 
 export const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
@@ -72,6 +79,20 @@ export const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
     btb: false,
     delaySlot: false,
     branchStage: "ID", // P&H COD textbook default: branch resolved in ID → 1-cycle penalty
+    ecallDrain: false,
+};
+
+/** Ripes "5-Stage RISC-V Processor" (RV32_5S): branch in EX with forwarded operands,
+ *  single-cycle EX for every unit, no BTB / delay slot, and the ecall drain. */
+export const RIPES_PIPELINE_CONFIG: PipelineConfig = {
+    forwarding: true,
+    fpAddLatency: 1,
+    mulLatency: 1,
+    divLatency: 1,
+    btb: false,
+    delaySlot: false,
+    branchStage: "EX",
+    ecallDrain: true,
 };
 
 export interface PipeCell {
@@ -83,6 +104,8 @@ export interface PipeCell {
     waitFor?: string;
     /** For a stall: the cycle in which that value/resource becomes available. */
     readyCycle?: number;
+    /** Stage the instruction is held in while stalled ("ID" by default; "EX" for a draining ecall). */
+    holdStage?: "ID" | "EX";
 }
 
 export interface PipeRow {
@@ -102,6 +125,8 @@ export interface PipelineStats {
     structStalls: number;
     branchTakenStalls: number;
     branchMispredStalls: number;
+    /** Cycles spent draining the pipeline before a system call (ecallDrain) — Ripes-style. */
+    syscallStalls: number;
     codeSize: number;
 }
 
@@ -134,6 +159,7 @@ const REG_KEY = /^(rd|rs1|rs2|rs3|rs|rt|reg\d+)$/;
 const LOAD_RE = /^(l[bhwd]u?|ld|ll|lwl|lwr|lwc\d|ldc\d|fl[wd])$/;
 const STORE_RE = /^(s[bhwd]|sc|swl|swr|swc\d|sdc\d|fs[wd])$/;
 const BRANCH_RE = /^(b[a-z0-9]*|j|jr|jal|jalr)$/;
+const SYSCALL_RE = /^(ecall|scall|syscall)$/;
 
 /**
  * Builds a normalised `PipeInstr` from a per-instruction `DatapathTrace`.
@@ -168,10 +194,17 @@ export function buildPipeInstr(trace: DatapathTrace, index: number): PipeInstr {
 
     let writes: string[] = [];
     let reads: string[] = [];
-    if (isStore || isBranch) {
+    // jal rd, …  /  jalr rd, rs1 — the link register is written, the rest are read.
+    // (A MIPS `jal label` / `jalr $rs` has no explicit rd operand and stays a plain read.)
+    const isLink = /^jalr?$/.test(mnemonic) && regs.length >= (mnemonic === "jal" ? 1 : 2);
+    if (isLink) {
+        const dest = regs[0] as string;
+        if (!isZeroReg(dest)) writes = [dest];
+        reads = regs.slice(1).filter(r => !isZeroReg(r));
+    } else if (isStore || isBranch) {
         reads = regs.filter(r => !isZeroReg(r));
     } else if (regs.length > 0) {
-        const dest = regs[0];
+        const dest = regs[0] as string;
         if (!isZeroReg(dest)) writes = [dest];
         reads = regs.slice(1).filter(r => !isZeroReg(r));
     }
@@ -224,6 +257,8 @@ export function schedulePipeline(
     const btbSet = new Set<string>(); // branch PCs seen taken (Branch Target Buffer)
     const pcs = new Set<string>();
     let divFreeAt = 0;
+    let exBusyUntil = 0; // last cycle EX is held by a draining syscall (in-order: nobody enters EX before)
+    let syscallStalls = 0;
     let nextIf = 1;
     let maxCycle = 0;
     let rawStalls = 0;
@@ -259,6 +294,14 @@ export function schedulePipeline(
             waitFor = rawReg;
             readyCycle = rawReady;
         }
+        // EX still held by an older draining syscall (ecallDrain): wait in ID.
+        if (exBusyUntil >= exStart) {
+            syscallStalls += exBusyUntil + 1 - exStart;
+            exStart = exBusyUntil + 1;
+            stallKind = "Sys";
+            waitFor = "ecall";
+            readyCycle = exStart;
+        }
         // Structural hazard: non-pipelined divider busy.
         if (instr.unit === "div" && divFreeAt > exStart) {
             structStalls += divFreeAt - exStart;
@@ -286,8 +329,23 @@ export function schedulePipeline(
             }
         }
 
-        const exEnd = exStart + lat - 1;
+        let exEnd = exStart + lat - 1;
         if (instr.unit === "div") divFreeAt = exEnd + 1;
+
+        // Ripes-style ecall: hold it in EX until every in-flight register write has
+        // retired (an older writer whose WB is at/after our EX is still in MEM/WB).
+        let sysWait: { reg: string; wb: number } | undefined;
+        if (cfg.ecallDrain && SYSCALL_RE.test(instr.mnemonic)) {
+            for (const [reg, wb] of pendingWrite) {
+                if (wb >= exStart && (!sysWait || wb > sysWait.wb)) sysWait = { reg, wb };
+            }
+            if (sysWait) {
+                const held = sysWait.wb + 1 - exStart; // cycles EX is held beyond its own
+                syscallStalls += held;
+                exEnd += held;
+                exBusyUntil = exEnd;
+            }
+        }
 
         const memCycle = exEnd + 1;
         let wbCycle = memCycle + 1;
@@ -346,6 +404,12 @@ export function schedulePipeline(
         for (let i = 0; i < lat; i++) {
             cells.push({ cycle: exStart + i, stage: stages[i], stalled: false });
         }
+        if (sysWait) {
+            // the ecall sits in EX while the older writers drain (Ripes draws these as "-")
+            for (let c = exStart + lat; c <= exEnd; c++) {
+                cells.push({ cycle: c, stage: "", stalled: true, stallKind: "Sys", waitFor: sysWait.reg, readyCycle: sysWait.wb + 1, holdStage: "EX" });
+            }
+        }
         cells.push({ cycle: memCycle, stage: "MEM", stalled: false });
         cells.push({ cycle: wbCycle, stage: "WB", stalled: false });
 
@@ -391,6 +455,7 @@ export function schedulePipeline(
         structStalls,
         branchTakenStalls,
         branchMispredStalls,
+        syscallStalls,
         codeSize: pcs.size,
     };
     return { rows, stats, maxCycle, forwards };

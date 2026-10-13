@@ -1,0 +1,71 @@
+{
+  "program": "t2_loaduse",
+  "source": "Ripes continuous v2.2.6-106-g5b8a616, --proc RV32_5S",
+  "cycles": 16,
+  "retired": 9,
+  "instrs": [
+    {
+      "asm": "auipc x9 0x10000",
+      "taken": false,
+      "if": 0,
+      "wb": 4,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x9 x9 0",
+      "taken": false,
+      "if": 1,
+      "wb": 5,
+      "stalls": 0
+    },
+    {
+      "asm": "lw x6 0 x9",
+      "taken": false,
+      "if": 2,
+      "wb": 6,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x7 x6 1",
+      "taken": false,
+      "if": 3,
+      "wb": 8,
+      "stalls": 1
+    },
+    {
+      "asm": "lw x8 4 x9",
+      "taken": false,
+      "if": 4,
+      "wb": 9,
+      "stalls": 1
+    },
+    {
+      "asm": "addi x0 x0 0",
+      "taken": false,
+      "if": 6,
+      "wb": 10,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x9 x8 1",
+      "taken": false,
+      "if": 7,
+      "wb": 11,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x17 x0 10",
+      "taken": false,
+      "if": 8,
+      "wb": 12,
+      "stalls": 0
+    },
+    {
+      "asm": "ecall",
+      "taken": false,
+      "if": 9,
+      "wb": 15,
+      "stalls": 2
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "program": "t7_ecall_stall",
+  "source": "Ripes continuous v2.2.6-106-g5b8a616, --proc RV32_5S",
+  "cycles": 13,
+  "retired": 5,
+  "instrs": [
+    {
+      "asm": "addi x10 x0 42",
+      "taken": false,
+      "if": 0,
+      "wb": 4,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x17 x0 1",
+      "taken": false,
+      "if": 1,
+      "wb": 5,
+      "stalls": 0
+    },
+    {
+      "asm": "ecall",
+      "taken": false,
+      "if": 2,
+      "wb": 8,
+      "stalls": 2
+    },
+    {
+      "asm": "addi x17 x0 10",
+      "taken": false,
+      "if": 3,
+      "wb": 9,
+      "stalls": 2
+    },
+    {
+      "asm": "ecall",
+      "taken": false,
+      "if": 4,
+      "wb": 12,
+      "stalls": 4
+    }
+  ]
+}

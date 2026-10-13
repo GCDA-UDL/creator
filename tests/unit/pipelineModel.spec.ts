@@ -8,6 +8,7 @@ import {
     buildPipeInstr,
     isZeroReg,
     DEFAULT_PIPELINE_CONFIG,
+    RIPES_PIPELINE_CONFIG,
     type PipeInstr,
     type PipelineConfig,
 } from "@/core/trace/pipelineModel.mts";
@@ -273,5 +274,89 @@ describe("isZeroReg", () => {
     it("recognises zero registers across ISAs", () => {
         for (const z of ["x0", "$zero", "zero", "$0", "R0"]) expect(isZeroReg(z)).toBe(true);
         for (const r of ["x1", "$5", "t0", "ra"]) expect(isZeroReg(r)).toBe(false);
+    });
+});
+
+describe("Ripes parity — ecall drain, link register, Sys stalls", () => {
+    // t7 of the Ripes comparison (Ripes/tests): addi a0 · addi a7 · ecall · addi a7 · ecall
+    const t7 = () => {
+        _i = 0;
+        return [
+            I({ asm: "addi x10, x0, 42", mnemonic: "addi", writes: ["x10"] }),
+            I({ asm: "addi x17, x0, 1", mnemonic: "addi", writes: ["x17"] }),
+            I({ asm: "ecall", mnemonic: "ecall", type: "Syscall" }),
+            I({ asm: "addi x17, x0, 10", mnemonic: "addi", writes: ["x17"] }),
+            I({ asm: "ecall", mnemonic: "ecall", type: "Syscall" }),
+        ];
+    };
+
+    it("ecallDrain OFF (textbook): the ecall is a plain instruction → 9 cycles", () => {
+        const s = schedulePipeline(t7(), cfg({ ecallDrain: false }));
+        expect(s.stats.cycles).toBe(9);
+        expect(s.stats.syscallStalls).toBe(0);
+    });
+
+    it("ecallDrain ON reproduces Ripes RV32_5S on t7: 13 cycles, ecall held in EX", () => {
+        const s = schedulePipeline(t7(), cfg({ ecallDrain: true }));
+        expect(s.stats.cycles).toBe(13); // Ripes CLI: cycles=13
+        // first ecall: IF3 ID4 EX5 then held 6,7 (addi x17 writes back in 6) → MEM 8, WB 9
+        const e1 = s.rows[2];
+        expect(stages(e1)).toEqual(["IF", "ID", "EX", "", "", "MEM", "WB"]);
+        const held = e1.cells.filter(c => c.stalled);
+        expect(held.every(c => c.stallKind === "Sys" && c.holdStage === "EX" && c.waitFor === "x17")).toBe(true);
+        expect(held[0].readyCycle).toBe(7);
+        // the next addi waits in ID while EX is held (Ripes: "-" in ID) → EX at 8
+        const a2 = s.rows[3];
+        expect(a2.cells.find(c => c.stage === "EX")?.cycle).toBe(8);
+        expect(a2.cells.filter(c => c.stalled).every(c => c.stallKind === "Sys" && c.waitFor === "ecall")).toBe(true);
+        // second ecall: EX 9, held 10,11, MEM 12, WB 13
+        const e2 = s.rows[4];
+        expect(e2.cells.find(c => c.stage === "WB")?.cycle).toBe(13);
+        expect(s.stats.syscallStalls).toBeGreaterThan(0);
+    });
+
+    it("ecallDrain ON with nothing in flight → no hold", () => {
+        _i = 0;
+        const s = schedulePipeline(
+            [I({ writes: ["x5"] }), I({ writes: ["x6"] }), I(), I(), I({ asm: "ecall", mnemonic: "ecall" })],
+            cfg({ ecallDrain: true }),
+        );
+        expect(s.stats.syscallStalls).toBe(0);
+        expect(s.stats.cycles).toBe(9);
+    });
+
+    it("RIPES_PIPELINE_CONFIG: branch in EX, single-cycle units, ecall drain", () => {
+        expect(RIPES_PIPELINE_CONFIG.branchStage).toBe("EX");
+        expect(RIPES_PIPELINE_CONFIG.mulLatency).toBe(1);
+        expect(RIPES_PIPELINE_CONFIG.ecallDrain).toBe(true);
+    });
+});
+
+describe("buildPipeInstr — link register of jal/jalr", () => {
+    const T = (over: Record<string, unknown>) =>
+        buildPipeInstr({ pc: "0x0", instructionHex: "0", asm: "", type: "", format: "J", microops: [], signals: {}, operands: {}, unit: "alu", ...over } as any, 0);
+
+    it("jal rd, label writes rd (and reads nothing)", () => {
+        const p = T({ asm: "jal x1, func", operands: { rd: "x1", imm: "16" }, branchTaken: true });
+        expect(p.isBranch).toBe(true);
+        expect(p.writes).toEqual(["x1"]);
+        expect(p.reads).toEqual([]);
+    });
+    it("jalr rd, imm(rs1) writes rd and reads rs1; x0 destination is dropped", () => {
+        const p = T({ asm: "jalr x0, 0(x1)", format: "I", operands: { rd: "x0", rs1: "x1", imm: "0" } });
+        expect(p.writes).toEqual([]);
+        expect(p.reads).toEqual(["x1"]);
+    });
+    it("a jal→ret pair yields a forwarding edge on the link register (branch in ID)", () => {
+        // With the 1-cycle (ID) penalty the ret reaches EX while the jal is in WB → bypass.
+        // (In EX the 2-cycle flush lets the jal retire first: no bypass needed, correctly.)
+        _i = 0;
+        const pair = () => [
+            I({ asm: "jal x1, f", mnemonic: "jal", isBranch: true, branchTaken: true, writes: ["x1"] }),
+            I({ asm: "jalr x0, 0(x1)", mnemonic: "jalr", isBranch: true, branchTaken: true, reads: ["x1"] }),
+        ];
+        expect(schedulePipeline(pair(), cfg({ branchStage: "ID" })).forwards.some(f => f.reg === "x1")).toBe(true);
+        _i = 0;
+        expect(schedulePipeline(pair(), cfg({ branchStage: "EX" })).forwards.some(f => f.reg === "x1")).toBe(false);
     });
 });
