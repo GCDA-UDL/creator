@@ -11,7 +11,13 @@ import { defineComponent } from "vue";
 import { coreEvents } from "@/core/events.mts";
 import { architecture } from "@/core/core.mjs";
 import { DATAPATH_TRACE_EVENT } from "@/core/trace/datapathTrace.mts";
-import { getExecutionHistory } from "@/core/trace/executionHistory.mts";
+import {
+    getExecutionHistory,
+    getExecutionHistoryLimit,
+    setExecutionHistoryLimit,
+    MIN_HISTORY_LIMIT,
+    MAX_HISTORY_LIMIT,
+} from "@/core/trace/executionHistory.mts";
 import {
     schedulePipeline,
     buildPipeInstr,
@@ -20,7 +26,7 @@ import {
     type PipelineConfig,
     type PipelineSchedule,
 } from "@/core/trace/pipelineModel.mts";
-import { CYCLES_CONFIG_EVENT, loadCyclesConfig, saveCyclesConfig } from "./pipelineConfigStore.mts";
+import { CYCLES_CONFIG_EVENT, loadCyclesConfig, saveCyclesConfig, saveHistoryLimit } from "./pipelineConfigStore.mts";
 
 type BranchStage = "ID" | "EX" | "MEM";
 interface CyclesConfig {
@@ -78,6 +84,11 @@ export default defineComponent({
             tip: { show: false, text: "", x: 0, y: 0 },
             cursor: 1, // current cycle (manual ▶ step, or following CREATOR's Step)
             live: false, // false = step mode (start at cycle 1); true = show the full timeline
+            // executed-instruction history cap (memory bound; programs longer than this
+            // keep only their last N instructions, so the grid/stats start mid-program)
+            historyLimit: getExecutionHistoryLimit(),
+            historyMin: MIN_HISTORY_LIMIT,
+            historyMax: MAX_HISTORY_LIMIT,
         };
     },
     mounted() {
@@ -98,6 +109,12 @@ export default defineComponent({
             handler(v: CyclesConfig) {
                 saveCyclesConfig(v);
             },
+        },
+        historyLimit(v: number) {
+            if (!Number.isFinite(v)) return;
+            setExecutionHistoryLimit(v);
+            saveHistoryLimit(getExecutionHistoryLimit());
+            this.version++;
         },
         displayMaxCycle() {
             // in live mode keep the most recent cycles in view as the timeline grows
@@ -138,6 +155,11 @@ export default defineComponent({
         },
         hasData(): boolean {
             return this.schedule.rows.length > 0;
+        },
+        /** The program ran longer than the history keeps: the timeline starts mid-program. */
+        historySaturated(): boolean {
+            void this.version;
+            return getExecutionHistory().length >= getExecutionHistoryLimit();
         },
         truncated(): boolean {
             return this.schedule.rows.length > MAX_ROWS;
@@ -373,6 +395,10 @@ export default defineComponent({
                 <input type="number" min="1" max="12" v-model.number="config.mulLatency" />
                 <label>Division latency</label>
                 <input type="number" min="1" max="40" v-model.number="config.divLatency" />
+                <label class="cyc-sel" title="Instrucciones ejecutadas que se conservan para la rejilla y las estadísticas (límite de memoria). Programas más largos conservan solo sus últimas N instrucciones">
+                    Historial máx. (instr.)
+                    <input type="number" class="cyc-hist" :min="historyMin" :max="historyMax" step="1000" v-model.number="historyLimit" />
+                </label>
             </div>
             <div class="cyc-row">
                 <label class="cyc-chk"><input type="checkbox" v-model="config.btb" /> Branch Target Buffer</label>
@@ -435,6 +461,9 @@ export default defineComponent({
                 Student mode: each <b>stall</b> shows the register the instruction is waiting for — hover it to see in which cycle that value becomes available.
             </p>
             <p v-if="truncated" class="cyc-trunc">Showing the first {{ gridRows.length }} of {{ schedule.rows.length }} instructions.</p>
+            <p v-if="historySaturated" class="cyc-trunc">
+                El historial está lleno ({{ historyLimit }} instrucciones): la línea de tiempo cubre solo las últimas ejecutadas. Sube "Historial máx." en Pipeline config y vuelve a ejecutar para ver el programa completo.
+            </p>
 
             <!-- Cycle-by-cycle cursor (WinMIPS64-style: advance one clock at a time) -->
             <div class="cyc-cursor">
@@ -521,6 +550,7 @@ export default defineComponent({
 .cyc-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 0.75rem; }
 .cyc-row label { color: rgba(var(--bs-body-color-rgb), 0.85); font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
 .cyc-row input[type="number"] { width: 56px; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(var(--bs-secondary-rgb), 0.4); }
+.cyc-row input.cyc-hist { width: 84px; }
 .cyc-muted { color: rgba(var(--bs-body-color-rgb), 0.5); }
 .cyc-muted i { font-weight: 400; }
 .cyc-chk.disabled { opacity: 0.5; cursor: not-allowed; }

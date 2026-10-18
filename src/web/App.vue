@@ -37,7 +37,8 @@ import type { StackFrame } from "@/core/memory/StackTracker.mjs";
 import { creator_ga } from "@/core/utils/creator_ga.mjs";
 import { InterruptHandlerType } from "@/core/executor/InterruptManager.mjs";
 // UdL extension: record the executed-instruction stream for the cycles/pipeline view.
-import { startExecutionHistory } from "@/core/trace/executionHistory.mts";
+import { startExecutionHistory, setExecutionHistoryLimit } from "@/core/trace/executionHistory.mts";
+import { loadHistoryLimit } from "@/web/components/simulator/pipelineConfigStore.mts";
 // UdL extension: record the data memory-access stream for the cache view.
 import { startMemoryAccessHistory } from "@/core/trace/memoryAccessHistory.mts";
 // UdL extension: register the visual I/O peripherals (Lab view).
@@ -410,6 +411,8 @@ export default {
     this.target_port = this.get_target_port();
     // UdL: start recording the executed-instruction stream (cycles/pipeline view).
     startExecutionHistory();
+    const storedLimit = loadHistoryLimit();
+    if (storedLimit !== undefined) setExecutionHistoryLimit(storedLimit);
     // UdL: start recording the data memory-access stream (cache view).
     startMemoryAccessHistory();
     // UdL: register the visual I/O peripherals (Lab view).

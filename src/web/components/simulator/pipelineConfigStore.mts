@@ -12,6 +12,27 @@ import type { PipelineConfig } from "@/core/trace/pipelineModel.mts";
 
 export const CYCLES_CONFIG_KEY = "creator-cycles-config";
 export const CYCLES_CONFIG_EVENT = "creator-cycles-config-changed";
+/** How many executed instructions the history keeps (see executionHistory.mts). */
+export const HISTORY_LIMIT_KEY = "creator-history-limit";
+
+/** Stored history limit, or `undefined` when the default applies. */
+export function loadHistoryLimit(): number | undefined {
+    try {
+        const raw = localStorage.getItem(HISTORY_LIMIT_KEY);
+        const n = raw === null ? NaN : Number(raw);
+        return Number.isFinite(n) && n > 0 ? n : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+export function saveHistoryLimit(n: number): void {
+    try {
+        localStorage.setItem(HISTORY_LIMIT_KEY, String(Math.floor(n)));
+    } catch {
+        /* storage unavailable */
+    }
+}
 
 /** Reads the stored configuration (partial: only the fields that were saved). */
 export function loadCyclesConfig(): Partial<PipelineConfig> {

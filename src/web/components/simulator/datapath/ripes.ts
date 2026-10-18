@@ -58,6 +58,8 @@ export const ripesSpec: DatapathSpec = {
         { text: "PC+4", x: 108, y: 108 },
         { text: "target", x: 640, y: 56 },
         { text: "WB data", x: 884, y: 366 },
+        { text: "fwd MEM", x: 560, y: 150 },
+        { text: "fwd WB", x: 560, y: 132 },
     ],
     wires: [
         // ---- IF: next-PC loop, fetch
@@ -82,11 +84,12 @@ export const ripesSpec: DatapathSpec = {
         { points: "280,250 296,250 296,336 690,336 690,132 709,132", dashed: true },
         // ---- EX: forwarding MUXes (rs1 / rs2), ALU-source MUXes, ALU, branch comparator
         { points: "428,190 450,190 450,181 482,181", stage: "EX" },
-        { points: "671,166 680,166 680,150 468,150 468,191 482,191", fwd: { role: "rs1", from: "MEM" } },
+        // bypass lanes above EX: MEM (from EX/MEM.alures) at y 152/158, WB (from the WB MUX) at y 140/134
+        { points: "671,166 680,166 680,152 468,152 468,191 482,191", fwd: { role: "rs1", from: "MEM" } },
         { points: "892,216 900,216 900,140 462,140 462,201 482,201", fwd: { role: "rs1", from: "WB" } },
         { points: "428,215 450,215 450,221 474,221", stage: "EX" },
-        { points: "671,172 684,172 684,154 456,154 456,233 474,233", fwd: { role: "rs2", from: "MEM" } },
-        { points: "892,216 904,216 904,136 450,136 450,245 474,245", fwd: { role: "rs2", from: "WB" } },
+        { points: "671,174 684,174 684,158 456,158 456,233 474,233", fwd: { role: "rs2", from: "MEM" } },
+        { points: "892,216 904,216 904,134 450,134 450,245 474,245", fwd: { role: "rs2", from: "WB" } },
         { points: "506,191 510,191 510,171 516,171", stage: "EX" },
         { points: "428,165 504,165 504,195 516,195", stage: "EX" },
         { points: "540,183 550,183 550,190 558,190", stage: "EX" },

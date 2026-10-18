@@ -48,7 +48,7 @@ Los planes de validación de arriba usan el programa **completo**; los pequeños
 
 | Grupo | Programas pequeños | Completo |
 |-------|--------------------|----------|
-| Datapath | 01 Aritmética · 02 Lógica/shifts · 03 Mul · 04 Memoria · 05 Saltos · 06 Inmediato (U) · 07 FPU | Todos los formatos |
+| Datapath | 01 Aritmética · 02 Lógica/shifts · 03 Mul · 04 Memoria · 05 Saltos · 06 Inmediato (U) · 07 FPU · 08 Pseudo `li` (addi / lui / lui+addi; `config.li_expansion`) | Todos los formatos |
 | Pipeline | 01 RAW · 02 Load-use · 03 Latencia mul · 04 Salto tomado | Todos los riesgos |
 | Cache | 01 Espacial · 02 Temporal · 03 Conflicto · 04 Escrituras (WB) | Localidad + conflicto |
 | Virtual mem | 01 Paginación · 02 Revisita (TLB) · 03 Thrashing | Paginación + revisita |
