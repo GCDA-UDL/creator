@@ -14,15 +14,31 @@ import { coreEvents } from "../events.mts";
 import { DATAPATH_TRACE_EVENT, type DatapathTrace } from "./datapathTrace.mts";
 
 /** Ring cap so long-running / looping programs cannot grow the buffer unbounded. */
-const MAX_HISTORY = 5000;
 
 const history: DatapathTrace[] = [];
 let started = false;
 
+/** Default cap on recorded instructions (memory bound; the Cycles view recomputes over all of them). */
+export const DEFAULT_HISTORY_LIMIT = 5000;
+export const MIN_HISTORY_LIMIT = 250;
+export const MAX_HISTORY_LIMIT = 500_000;
+let maxHistory = DEFAULT_HISTORY_LIMIT;
+
+/** Sets how many executed instructions are kept (older ones are dropped). Clamped to [250, 500000]. */
+export function setExecutionHistoryLimit(n: number): void {
+    const v = Math.floor(Number(n));
+    maxHistory = Number.isFinite(v) ? Math.min(MAX_HISTORY_LIMIT, Math.max(MIN_HISTORY_LIMIT, v)) : DEFAULT_HISTORY_LIMIT;
+    if (history.length > maxHistory) history.splice(0, history.length - maxHistory);
+}
+
+export function getExecutionHistoryLimit(): number {
+    return maxHistory;
+}
+
 function onTrace(trace: DatapathTrace): void {
     history.push(trace);
-    if (history.length > MAX_HISTORY) {
-        history.splice(0, history.length - MAX_HISTORY);
+    if (history.length > maxHistory) {
+        history.splice(0, history.length - maxHistory);
     }
 }
 

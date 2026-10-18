@@ -11,14 +11,22 @@ import { defineComponent } from "vue";
 import { coreEvents } from "@/core/events.mts";
 import { architecture } from "@/core/core.mjs";
 import { DATAPATH_TRACE_EVENT } from "@/core/trace/datapathTrace.mts";
-import { getExecutionHistory } from "@/core/trace/executionHistory.mts";
+import {
+    getExecutionHistory,
+    getExecutionHistoryLimit,
+    setExecutionHistoryLimit,
+    MIN_HISTORY_LIMIT,
+    MAX_HISTORY_LIMIT,
+} from "@/core/trace/executionHistory.mts";
 import {
     schedulePipeline,
     buildPipeInstr,
     DEFAULT_PIPELINE_CONFIG,
+    RIPES_PIPELINE_CONFIG,
     type PipelineConfig,
     type PipelineSchedule,
 } from "@/core/trace/pipelineModel.mts";
+import { CYCLES_CONFIG_EVENT, loadCyclesConfig, saveCyclesConfig, saveHistoryLimit } from "./pipelineConfigStore.mts";
 
 type BranchStage = "ID" | "EX" | "MEM";
 interface CyclesConfig {
@@ -29,6 +37,8 @@ interface CyclesConfig {
     fpAddLatency: number;
     mulLatency: number;
     divLatency: number;
+    /** Ripes-style: an ecall waits in EX until older register writes retire. */
+    ecallDrain: boolean;
 }
 const DEFAULTS: CyclesConfig = {
     forwarding: DEFAULT_PIPELINE_CONFIG.forwarding,
@@ -38,15 +48,26 @@ const DEFAULTS: CyclesConfig = {
     fpAddLatency: DEFAULT_PIPELINE_CONFIG.fpAddLatency,
     mulLatency: DEFAULT_PIPELINE_CONFIG.mulLatency,
     divLatency: DEFAULT_PIPELINE_CONFIG.divLatency,
+    ecallDrain: false,
 };
-const LS_KEY = "creator-cycles-config";
 const MAX_ROWS = 250;
 
 const PRESETS: Record<string, CyclesConfig> = {
-    "P&H textbook": { forwarding: true, btb: false, delaySlot: false, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
-    "MIPS classic": { forwarding: true, btb: false, delaySlot: true, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
-    "No forwarding": { forwarding: false, btb: false, delaySlot: false, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
-    "Predicted (BTB)": { forwarding: true, btb: true, delaySlot: false, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24 },
+    "P&H textbook": { forwarding: true, btb: false, delaySlot: false, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24, ecallDrain: false },
+    "MIPS classic": { forwarding: true, btb: false, delaySlot: true, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24, ecallDrain: false },
+    "No forwarding": { forwarding: false, btb: false, delaySlot: false, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24, ecallDrain: false },
+    "Predicted (BTB)": { forwarding: true, btb: true, delaySlot: false, branchStage: "ID", fpAddLatency: 4, mulLatency: 7, divLatency: 24, ecallDrain: false },
+    // Ripes "5-Stage RISC-V Processor" (RV32_5S): verified cycle-exact against Ripes CLI (see tests)
+    "Ripes (RV5S)": {
+        forwarding: true,
+        btb: false,
+        delaySlot: false,
+        branchStage: "EX",
+        fpAddLatency: RIPES_PIPELINE_CONFIG.fpAddLatency,
+        mulLatency: RIPES_PIPELINE_CONFIG.mulLatency,
+        divLatency: RIPES_PIPELINE_CONFIG.divLatency,
+        ecallDrain: true,
+    },
 };
 
 export default defineComponent({
@@ -63,33 +84,37 @@ export default defineComponent({
             tip: { show: false, text: "", x: 0, y: 0 },
             cursor: 1, // current cycle (manual ▶ step, or following CREATOR's Step)
             live: false, // false = step mode (start at cycle 1); true = show the full timeline
+            // executed-instruction history cap (memory bound; programs longer than this
+            // keep only their last N instructions, so the grid/stats start mid-program)
+            historyLimit: getExecutionHistoryLimit(),
+            historyMin: MIN_HISTORY_LIMIT,
+            historyMax: MAX_HISTORY_LIMIT,
         };
     },
     mounted() {
-        try {
-            const raw = localStorage.getItem(LS_KEY);
-            if (raw) this.config = { ...DEFAULTS, ...JSON.parse(raw) };
-        } catch {
-            /* ignore */
-        }
+        this.config = { ...DEFAULTS, ...loadCyclesConfig() } as CyclesConfig;
         (coreEvents as any).on(DATAPATH_TRACE_EVENT, this.onChange);
         (coreEvents as any).on("registers-reset", this.onReset);
+        window.addEventListener(CYCLES_CONFIG_EVENT, this.onExternalConfig);
         this.$nextTick(() => this.scrollToCursor());
     },
     beforeUnmount() {
         (coreEvents as any).off(DATAPATH_TRACE_EVENT, this.onChange);
         (coreEvents as any).off("registers-reset", this.onReset);
+        window.removeEventListener(CYCLES_CONFIG_EVENT, this.onExternalConfig);
     },
     watch: {
         config: {
             deep: true,
             handler(v: CyclesConfig) {
-                try {
-                    localStorage.setItem(LS_KEY, JSON.stringify(v));
-                } catch {
-                    /* ignore */
-                }
+                saveCyclesConfig(v);
             },
+        },
+        historyLimit(v: number) {
+            if (!Number.isFinite(v)) return;
+            setExecutionHistoryLimit(v);
+            saveHistoryLimit(getExecutionHistoryLimit());
+            this.version++;
         },
         displayMaxCycle() {
             // in live mode keep the most recent cycles in view as the timeline grows
@@ -123,12 +148,18 @@ export default defineComponent({
                 fpAddLatency: this.config.fpAddLatency,
                 mulLatency: this.config.mulLatency,
                 divLatency: this.config.divLatency,
+                ecallDrain: this.config.ecallDrain,
             };
             const instrs = getExecutionHistory().map((t, i) => buildPipeInstr(t, i));
             return schedulePipeline(instrs, cfg);
         },
         hasData(): boolean {
             return this.schedule.rows.length > 0;
+        },
+        /** The program ran longer than the history keeps: the timeline starts mid-program. */
+        historySaturated(): boolean {
+            void this.version;
+            return getExecutionHistory().length >= getExecutionHistoryLimit();
         },
         truncated(): boolean {
             return this.schedule.rows.length > MAX_ROWS;
@@ -166,7 +197,7 @@ export default defineComponent({
                 let g = cell.stage as string;
                 let unit = "";
                 if (cell.stalled) {
-                    g = "ID";
+                    g = cell.holdStage ?? "ID";
                 } else if (g === "EX" || g === "DIV" || g[0] === "M" || g[0] === "A") {
                     unit = g === "EX" ? "" : g;
                     g = "EX";
@@ -267,6 +298,12 @@ export default defineComponent({
             this.$nextTick(() => this.scrollRight());
         },
         stallTitle(cell: { stallKind?: string; waitFor?: string; readyCycle?: number }): string {
+            if (cell.stallKind === "Sys") {
+                return cell.waitFor === "ecall"
+                    ? `Syscall stall — EX is held by the ecall draining the pipeline (free in cycle ${cell.readyCycle ?? "?"})`
+                    : `Syscall stall — the ecall waits until ${cell.waitFor ?? "the older writes"} is written back` +
+                          (cell.readyCycle !== undefined ? ` (cycle ${cell.readyCycle})` : "");
+            }
             if (cell.stallKind === "Str") {
                 return cell.readyCycle != null
                     ? `Structural stall — divider busy, free in cycle ${cell.readyCycle}`
@@ -292,6 +329,11 @@ export default defineComponent({
         applyPreset(name: string) {
             const p = PRESETS[name];
             if (p) this.config = { ...p };
+        },
+        /** Another view (e.g. the Schematic's "Ripes" button) saved a configuration. */
+        onExternalConfig() {
+            const next = { ...DEFAULTS, ...loadCyclesConfig() } as CyclesConfig;
+            if (JSON.stringify(next) !== JSON.stringify(this.config)) this.config = next;
         },
         resetConfig() {
             this.config = { ...DEFAULTS };
@@ -353,6 +395,10 @@ export default defineComponent({
                 <input type="number" min="1" max="12" v-model.number="config.mulLatency" />
                 <label>Division latency</label>
                 <input type="number" min="1" max="40" v-model.number="config.divLatency" />
+                <label class="cyc-sel" title="Instrucciones ejecutadas que se conservan para la rejilla y las estadísticas (límite de memoria). Programas más largos conservan solo sus últimas N instrucciones">
+                    Historial máx. (instr.)
+                    <input type="number" class="cyc-hist" :min="historyMin" :max="historyMax" step="1000" v-model.number="historyLimit" />
+                </label>
             </div>
             <div class="cyc-row">
                 <label class="cyc-chk"><input type="checkbox" v-model="config.btb" /> Branch Target Buffer</label>
@@ -361,11 +407,14 @@ export default defineComponent({
                            @change="config.delaySlot = ($event.target as HTMLInputElement).checked" />
                     Delay slot <span v-if="!isMips" class="cyc-muted">(solo MIPS)</span>
                 </label>
+                <label class="cyc-chk" title="Estilo Ripes: el ecall espera en EX a que las instrucciones anteriores escriban sus registros (su gestor de syscalls lee el banco). Desactivado = modelo del libro (ecall = instrucción normal)">
+                    <input type="checkbox" v-model="config.ecallDrain" /> ecall drena el pipeline <span class="cyc-muted">(Ripes)</span>
+                </label>
                 <label class="cyc-sel" title="Etapa donde se resuelve el salto (predict-not-taken), según P&H COD: ID=1, EX=2, MEM=3 burbujas">
                     Branch resuelto en
                     <select v-model="config.branchStage">
                         <option value="ID">ID (1 ciclo · P&H)</option>
-                        <option value="EX">EX (2 ciclos · WinMIPS64)</option>
+                        <option value="EX">EX (2 ciclos · WinMIPS64 / Ripes)</option>
                         <option value="MEM">MEM (3 ciclos · base)</option>
                     </select>
                 </label>
@@ -390,6 +439,7 @@ export default defineComponent({
                 <div class="stat"><div class="n">{{ stats.warStalls }}</div><div class="l">WAR stalls</div></div>
                 <div class="stat"><div class="n">{{ stats.branchTakenStalls }}</div><div class="l">Branch-taken stalls</div></div>
                 <div class="stat"><div class="n">{{ stats.branchMispredStalls }}</div><div class="l">Branch-mispred stalls</div></div>
+                <div v-if="config.ecallDrain || stats.syscallStalls" class="stat"><div class="n">{{ stats.syscallStalls }}</div><div class="l">Syscall stalls</div></div>
             </div>
 
             <!-- Legend -->
@@ -411,6 +461,9 @@ export default defineComponent({
                 Student mode: each <b>stall</b> shows the register the instruction is waiting for — hover it to see in which cycle that value becomes available.
             </p>
             <p v-if="truncated" class="cyc-trunc">Showing the first {{ gridRows.length }} of {{ schedule.rows.length }} instructions.</p>
+            <p v-if="historySaturated" class="cyc-trunc">
+                El historial está lleno ({{ historyLimit }} instrucciones): la línea de tiempo cubre solo las últimas ejecutadas. Sube "Historial máx." en Pipeline config y vuelve a ejecutar para ver el programa completo.
+            </p>
 
             <!-- Cycle-by-cycle cursor (WinMIPS64-style: advance one clock at a time) -->
             <div class="cyc-cursor">
@@ -497,6 +550,7 @@ export default defineComponent({
 .cyc-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 0.75rem; }
 .cyc-row label { color: rgba(var(--bs-body-color-rgb), 0.85); font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
 .cyc-row input[type="number"] { width: 56px; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(var(--bs-secondary-rgb), 0.4); }
+.cyc-row input.cyc-hist { width: 84px; }
 .cyc-muted { color: rgba(var(--bs-body-color-rgb), 0.5); }
 .cyc-muted i { font-weight: 400; }
 .cyc-chk.disabled { opacity: 0.5; cursor: not-allowed; }

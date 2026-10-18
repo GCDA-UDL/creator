@@ -1,0 +1,141 @@
+{
+  "program": "t5_loop",
+  "source": "Ripes continuous v2.2.6-106-g5b8a616, --proc RV32_5S",
+  "cycles": 33,
+  "retired": 19,
+  "instrs": [
+    {
+      "asm": "addi x9 x0 5",
+      "taken": false,
+      "if": 0,
+      "wb": 4,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x6 x0 0",
+      "taken": false,
+      "if": 1,
+      "wb": 5,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x6 x6 1",
+      "taken": false,
+      "if": 2,
+      "wb": 6,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x9 x9 -1",
+      "taken": false,
+      "if": 3,
+      "wb": 7,
+      "stalls": 0
+    },
+    {
+      "asm": "bne x9 x0 -8 <loop>",
+      "taken": true,
+      "if": 4,
+      "wb": 8,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x6 x6 1",
+      "taken": false,
+      "if": 7,
+      "wb": 11,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x9 x9 -1",
+      "taken": false,
+      "if": 8,
+      "wb": 12,
+      "stalls": 0
+    },
+    {
+      "asm": "bne x9 x0 -8 <loop>",
+      "taken": true,
+      "if": 9,
+      "wb": 13,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x6 x6 1",
+      "taken": false,
+      "if": 12,
+      "wb": 16,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x9 x9 -1",
+      "taken": false,
+      "if": 13,
+      "wb": 17,
+      "stalls": 0
+    },
+    {
+      "asm": "bne x9 x0 -8 <loop>",
+      "taken": true,
+      "if": 14,
+      "wb": 18,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x6 x6 1",
+      "taken": false,
+      "if": 17,
+      "wb": 21,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x9 x9 -1",
+      "taken": false,
+      "if": 18,
+      "wb": 22,
+      "stalls": 0
+    },
+    {
+      "asm": "bne x9 x0 -8 <loop>",
+      "taken": true,
+      "if": 19,
+      "wb": 23,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x6 x6 1",
+      "taken": false,
+      "if": 22,
+      "wb": 26,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x9 x9 -1",
+      "taken": false,
+      "if": 23,
+      "wb": 27,
+      "stalls": 0
+    },
+    {
+      "asm": "bne x9 x0 -8 <loop>",
+      "taken": false,
+      "if": 24,
+      "wb": 28,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x17 x0 10",
+      "taken": false,
+      "if": 25,
+      "wb": 29,
+      "stalls": 0
+    },
+    {
+      "asm": "ecall",
+      "taken": false,
+      "if": 26,
+      "wb": 32,
+      "stalls": 2
+    }
+  ]
+}

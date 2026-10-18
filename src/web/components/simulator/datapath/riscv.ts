@@ -7,6 +7,12 @@ import type { DatapathSpec } from "./spec";
 export const riscvSpec: DatapathSpec = {
     id: "riscv",
     plugins: ["riscv"],
+    style: "creator",
+    styleLabel: "CREATOR (P&H)",
+    theme: "classic",
+    // P&H COD Fig. 4.51-style pipelined datapath: Zero computed in EX, the taken
+    // decision + next-PC MUX in MEM (the Cycles model has its own, configurable stage).
+    branchStage: "MEM",
     caption:
         "RV32I datapath — the stage the current instruction goes through is highlighted.",
     viewBox: "0 0 940 430",

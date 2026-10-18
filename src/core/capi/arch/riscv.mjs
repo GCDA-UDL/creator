@@ -18,6 +18,29 @@
  */
 
 import { bi_BigIntTofloat, bi_BigIntTodouble } from "@/core/utils/bigint.mjs";
+import { architecture } from "../../core.mjs";
+
+/**
+ * Expansion policy of the `li rd, imm` pseudo-instruction (architecture YAML
+ * `config.li_expansion`):
+ *  - "standard" (default): the sequence produced by the RISC-V toolchains and by
+ *    Ripes — LLVM `RISCVMatInt::generateInstSeq` / GNU as `load_const`: `addi` alone
+ *    when the value fits in 12 signed bits, `lui` alone when its low 12 bits are
+ *    zero, otherwise `lui` + `addi` (with the +0x800 rounding of the upper part).
+ *    The RISC-V Assembly Programmer's Manual only says `li` expands to "myriad
+ *    sequences" chosen by the compiler; this is the one every mainstream tool emits.
+ *  - "lui_addi": always `lui` + `addi` once the value does not fit in 12 bits, even
+ *    when the low part is zero (RARS' template and CREATOR's historical behaviour —
+ *    shows both halves to students, at the cost of one extra instruction).
+ */
+export const LI_EXPANSION_MODES = ["standard", "lui_addi"];
+export const DEFAULT_LI_EXPANSION = "standard";
+
+/** `li` policy of the loaded architecture (falls back to the standard one). */
+export function liExpansionMode() {
+    const m = architecture?.config?.li_expansion;
+    return LI_EXPANSION_MODES.includes(m) ? m : DEFAULT_LI_EXPANSION;
+}
 
 function isInt(val, bits) {
     const max = (1n << BigInt(bits - 1)) - 1n;
@@ -44,7 +67,7 @@ function countTrailingZeros(val) {
     return count;
 }
 
-function generateInstructionsImpl(value, instructions, destReg) {
+function generateInstructionsImpl(value, instructions, destReg, xlen = 64, mode = DEFAULT_LI_EXPANSION) {
     // Handle 32-bit values with LUI+ADDI sequence
     if (isInt(value, 32)) {
         const hi20 = Number(((value + 0x800n) >> 12n) & 0xfffffn);
@@ -54,8 +77,12 @@ function generateInstructionsImpl(value, instructions, destReg) {
             instructions.push(`lui ${destReg}, 0x${hi20.toString(16)}`);
         }
 
-        if (lo12 || hi20 === 0) {
-            const op = hi20 ? "addiw" : "addi";
+        // standard (LLVM / GNU as / Ripes): the add is skipped when the low 12 bits
+        // are zero; "lui_addi" always emits it after a lui (both halves visible).
+        if (lo12 || hi20 === 0 || mode === "lui_addi") {
+            // RV64 needs addiw after a lui (the result is sign-extended from 32 bits);
+            // RV32 only has addi.
+            const op = hi20 && xlen === 64 ? "addiw" : "addi";
             const src = hi20 ? destReg : "x0";
             instructions.push(`${op} ${destReg}, ${src}, ${lo12}`);
         }
@@ -87,7 +114,7 @@ function generateInstructionsImpl(value, instructions, destReg) {
     }
 
     // Process the remaining value recursively
-    generateInstructionsImpl(remainingValue, instructions, destReg);
+    generateInstructionsImpl(remainingValue, instructions, destReg, xlen, mode);
 
     // Apply shift if needed
     if (shift) {
@@ -101,9 +128,16 @@ function generateInstructionsImpl(value, instructions, destReg) {
 }
 
 export const ARCH = {
-    generateLoadImmediate(val, destReg) {
+    /** RV64 `li`: 64-bit value → shortest lui/addi(w)/slli sequence (policy: config.li_expansion). */
+    generateLoadImmediate(val, destReg, mode) {
         const instructions = [];
-        generateInstructionsImpl(BigInt(val), instructions, destReg);
+        generateInstructionsImpl(BigInt(val), instructions, destReg, 64, mode ?? liExpansionMode());
+        return instructions.join(";");
+    },
+    /** RV32 `li`: the operand is a 32-bit pattern (may arrive unsigned, e.g. 0xF00010A8) → addi | lui | lui+addi. */
+    generateLoadImmediate32(val, destReg, mode) {
+        const instructions = [];
+        generateInstructionsImpl(signExtend(BigInt(val), 32), instructions, destReg, 32, mode ?? liExpansionMode());
         return instructions.join(";");
     },
     toJSNumberD(bigIntValue) {

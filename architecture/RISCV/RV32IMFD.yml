@@ -15,6 +15,9 @@ config:
   passing_convention: true
   sensitive_register_name: true
   comment_prefix: "#"
+  # `li` pseudo-instruction expansion: "standard" (RISC-V toolchains / Ripes: addi | lui | lui+addi,
+  # the lui alone when the low 12 bits are zero) or "lui_addi" (always lui+addi above 12 bits, as RARS).
+  li_expansion: standard
   start_address: 0x0
   pc_offset: -4
   plugin: riscv
@@ -3838,21 +3841,15 @@ pseudoinstructions:
           suffix: ","
         - field: val
           type: imm-signed
+      # Expansion follows config.li_expansion ("standard" = toolchain/Ripes sequence:
+      # addi | lui | lui+addi; "lui_addi" = always lui+addi above 12 bits, as RARS).
       definition: |
         no_ret_op{
-          tmp = Field.2.(31,0).int;
-          tmp_low = tmp & 0x00000FFF;
-          tmp_low -= tmp_low > 0x7FF ? 0x1000 : 0;
-          tmp_hi = (tmp - tmp_low) >>> 12;
+          value = Field.2.(31,0).int;
+          res_instructions = CAPI.ARCH.generateLoadImmediate32(value, reg_name{1});
         };
-        if (tmp_hi === 0) {
-          addi rd, x0, op{tmp_low};
-        }
-        else {
-          lui rd, op{tmp_hi};
-          addi rd, rd, op{tmp_low};
-        };
-      help: Load the sign-extended 6-bit immediate, imm, into register rd.
+        op{res_instructions};
+      help: Load immediate. Expands to addi (12-bit values), lui (low 12 bits zero) or lui + addi; see config.li_expansion.
 
     - name: mv
       fields:

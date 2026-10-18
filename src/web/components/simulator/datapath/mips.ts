@@ -8,6 +8,10 @@ import type { DatapathSpec } from "./spec";
 export const mipsSpec: DatapathSpec = {
     id: "mips",
     plugins: ["mips"],
+    style: "creator",
+    styleLabel: "CREATOR (P&H)",
+    theme: "classic",
+    branchStage: "MEM",
     caption:
         "MIPS-32 single-cycle datapath — the stage the current instruction goes through is highlighted.",
     viewBox: "0 0 940 430",

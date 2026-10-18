@@ -1,0 +1,57 @@
+{
+  "program": "t8_lw_sw",
+  "source": "Ripes continuous v2.2.6-106-g5b8a616, --proc RV32_5S",
+  "cycles": 14,
+  "retired": 7,
+  "instrs": [
+    {
+      "asm": "auipc x9 0x10000",
+      "taken": false,
+      "if": 0,
+      "wb": 4,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x9 x9 0",
+      "taken": false,
+      "if": 1,
+      "wb": 5,
+      "stalls": 0
+    },
+    {
+      "asm": "lw x6 0 x9",
+      "taken": false,
+      "if": 2,
+      "wb": 6,
+      "stalls": 0
+    },
+    {
+      "asm": "sw x6 4 x9",
+      "taken": false,
+      "if": 3,
+      "wb": 8,
+      "stalls": 1
+    },
+    {
+      "asm": "lw x7 4 x9",
+      "taken": false,
+      "if": 4,
+      "wb": 9,
+      "stalls": 1
+    },
+    {
+      "asm": "addi x17 x0 10",
+      "taken": false,
+      "if": 6,
+      "wb": 10,
+      "stalls": 0
+    },
+    {
+      "asm": "ecall",
+      "taken": false,
+      "if": 7,
+      "wb": 13,
+      "stalls": 2
+    }
+  ]
+}

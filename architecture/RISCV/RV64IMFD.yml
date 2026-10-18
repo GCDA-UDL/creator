@@ -15,6 +15,8 @@ config:
   passing_convention: true
   sensitive_register_name: true
   comment_prefix: "#"
+  # `li` expansion policy: "standard" (toolchains / Ripes) or "lui_addi" (always lui+addi above 12 bits).
+  li_expansion: standard
   start_address: 0x0
   pc_offset: -4
   plugin: riscv

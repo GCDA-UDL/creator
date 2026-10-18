@@ -232,6 +232,11 @@
           "description": "String to use as line comment prefix",
           "type": "string"
         },
+        "li_expansion": {
+          "description": "RISC-V only. How the `li rd, imm` pseudo-instruction is expanded: \"standard\" (default; the RISC-V toolchain / Ripes sequence: addi for 12-bit values, lui alone when the low 12 bits are zero, otherwise lui + addi) or \"lui_addi\" (always lui + addi above 12 bits, like RARS).",
+          "enum": ["standard", "lui_addi"],
+          "default": "standard"
+        },
         "description": {
           "description": "Description of the architecture",
           "type": "string"

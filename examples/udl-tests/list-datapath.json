@@ -6,5 +6,6 @@
   { "name": "Datapath 05 · Saltos", "id": "dp05", "url": "examples/udl-tests/datapath/dp_05_salto.s", "description": "beq/bne/jal — ruta de salto" },
   { "name": "Datapath 06 · Inmediato alto (U)", "id": "dp06", "url": "examples/udl-tests/datapath/dp_06_inmediato.s", "description": "lui/auipc — sin rs1" },
   { "name": "Datapath 07 · FPU (doble)", "id": "dp07", "url": "examples/udl-tests/datapath/dp_07_fpu.s", "description": "fld/fadd.d/fmul.d — ilumina FPU" },
+  {"name": "Datapath 08 · Pseudo li (addi | lui | lui+addi)", "id": "dp08", "url": "examples/udl-tests/datapath/dp_08_pseudo_li.s", "description": "li según el valor: addi (12 bits) · lui (parte baja 0) · lui+addi — config.li_expansion: standard (toolchain/Ripes) | lui_addi (RARS)"},
   { "name": "Datapath · todos los formatos", "id": "dpall", "url": "examples/udl-tests/datapath/datapath_completo.s", "description": "COMPLETO: R/I/S/B/U/J + M + FPU (todo junto)" }
 ]

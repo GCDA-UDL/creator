@@ -1,0 +1,64 @@
+{
+  "program": "t4_br_nottaken",
+  "source": "Ripes continuous v2.2.6-106-g5b8a616, --proc RV32_5S",
+  "cycles": 14,
+  "retired": 8,
+  "instrs": [
+    {
+      "asm": "addi x9 x0 1",
+      "taken": false,
+      "if": 0,
+      "wb": 4,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x6 x0 1",
+      "taken": false,
+      "if": 1,
+      "wb": 5,
+      "stalls": 0
+    },
+    {
+      "asm": "bne x9 x6 12 <target>",
+      "taken": false,
+      "if": 2,
+      "wb": 6,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x7 x0 99",
+      "taken": false,
+      "if": 3,
+      "wb": 7,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x8 x0 98",
+      "taken": false,
+      "if": 4,
+      "wb": 8,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x9 x0 7",
+      "taken": false,
+      "if": 5,
+      "wb": 9,
+      "stalls": 0
+    },
+    {
+      "asm": "addi x17 x0 10",
+      "taken": false,
+      "if": 6,
+      "wb": 10,
+      "stalls": 0
+    },
+    {
+      "asm": "ecall",
+      "taken": false,
+      "if": 7,
+      "wb": 13,
+      "stalls": 2
+    }
+  ]
+}
